@@ -1,0 +1,6 @@
+project_idea_revue.txt
+.env
+__pycache__/
+.venv/
+*.pyc
+
