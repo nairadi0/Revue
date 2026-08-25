@@ -12,7 +12,10 @@ class User(Base):
   github_id: Mapped[int] = mapped_column(unique=True)
   username: Mapped[str] = mapped_column(String(50), unique=True)
   access_token: Mapped[str] = mapped_column(String(255))
+  token_expires_at: Mapped[datetime]
+  refresh_token: Mapped[str] = mapped_column(String(255))
   created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
 
 
 class Repository(Base):
