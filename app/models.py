@@ -109,4 +109,4 @@ class AgentRun(Base):
   status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus))
   started_at: Mapped[datetime]
   completed_at: Mapped[datetime | None]
-  tool_calls_log: Mapped[dict] = mapped_column(JSON)
+  tool_calls_log: Mapped[list] = mapped_column(JSON, default=list)
