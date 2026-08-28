@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str
     github_client_id: str
     github_client_secret: str
+    github_redirect_uri: str
     session_secret: str
 
 
