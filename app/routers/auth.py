@@ -1,10 +1,10 @@
-from fastapi import APIRouter, responses, Request, HTTPException
+from fastapi import APIRouter, responses, Request, HTTPException, Depends
 import httpx, secrets
 from ..config import settings
 from datetime import datetime, timedelta
 from ..database import SessionLocal
 from ..models import User
-from jose import jwt
+from jose import jwt, JWTError
 
 
 router = APIRouter()
@@ -41,10 +41,10 @@ async def callback(code: str, state: str, request: Request):
   redirect_uri = gh_redirect_uri
   async with httpx.AsyncClient() as client:
     response = await client.post(base_url, data={"client_id" : client_id,
-                                            "client_secret" : client_secret,
-                                            "code" : code,
-                                            "redirect_uri" : redirect_uri
-                                           }, headers={"Accept": "application/json"})
+                                                 "client_secret" : client_secret,
+                                                 "code" : code,
+                                                 "redirect_uri" : redirect_uri
+                                                }, headers={"Accept": "application/json"})
     token_data = response.json()
     token_expires_at = timedelta(seconds=int(token_data["expires_in"])) + datetime.now()
     auth_header = {"Authorization" : f"Bearer {token_data['access_token']}"}
@@ -75,5 +75,17 @@ async def callback(code: str, state: str, request: Request):
     response = responses.RedirectResponse(str(dash_url))
     response.set_cookie("jwt", jwt_token, httponly=True)
     return response
+def get_current_user(request: Request) -> User:
+  token = request.cookies.get("jwt")
+  if token is None: raise HTTPException(status_code=401, detail="User not Authenticated")
+  try:
+    decoded_token = jwt.decode(token, settings.session_secret, algorithms=["HS256"])
+    user_id = int(decoded_token["sub"])
+  except JWTError:
+    raise HTTPException(status_code=401, detail="Invalid Token")
+  db = SessionLocal()
+  user = db.query(User).filter(User.id == user_id).first()
+  if not user: raise HTTPException(status_code=401, detail="User not found")
 
+  return user
 
