@@ -1,4 +1,4 @@
-from fastapi import APIRouter, responses, Request, HTTPException, Depends
+from fastapi import APIRouter, responses, Request, HTTPException
 import httpx, secrets
 from ..config import settings
 from datetime import datetime, timedelta
