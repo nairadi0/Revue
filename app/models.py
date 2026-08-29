@@ -22,11 +22,21 @@ class Repository(Base):
   __tablename__ = "repositories"
 
   id: Mapped[int] = mapped_column(primary_key=True)
-  user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
   github_repo_id: Mapped[int] = mapped_column(unique=True)
   owner: Mapped[str]
   name: Mapped[str]
   default_branch: Mapped[str]
+
+
+class UserRepository(Base):
+  __tablename__ = "user_repositories"
+  id: Mapped[int] =  mapped_column(primary_key=True)
+  user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+  repo_id: Mapped[int] =  mapped_column(ForeignKey("repositories.id"))
+  connected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+  __table_args__ = (
+    UniqueConstraint("user_id", "repo_id", name="uq_user_repo"),
+  )
 
 
 class Status(PyEnum):
