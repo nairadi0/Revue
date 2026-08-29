@@ -40,16 +40,16 @@ class UserRepository(Base):
 
 
 class Status(PyEnum):
-  OPEN = 1
-  CLOSED = 2
-  MERGED = 3
+  OPEN = "OPEN"
+  CLOSED = "CLOSED"
+  MERGED = "MERGED"
 
 
 class AgentStatus(PyEnum):
-  PENDING = 1
-  RUNNING = 2
-  SUCCESS = 3
-  FAILED = 4
+  PENDING = "PENDING"
+  RUNNING = "RUNNING"
+  SUCCESS = "SUCCESS"
+  FAILED = "FAILED"
 
 
 class Severity(PyEnum):
@@ -59,11 +59,11 @@ class Severity(PyEnum):
 
 
 class Category(PyEnum):
-  SECURITY = 1
-  BUG = 2
-  PERFORMANCE = 3
-  STYLE = 4
-  BEST_PRACTICE = 5
+  SECURITY = "SECURITY"
+  BUG = "BUG"
+  PERFORMANCE = "PERFORMANCE"
+  STYLE = "STYLE"
+  BEST_PRACTICE = "BEST PRACTICE"
 
 
 class PullRequest(Base):
