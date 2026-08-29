@@ -1,17 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..models import User, Repository, UserRepository
-from .auth import get_current_user
+from .auth import get_current_user, get_valid_access_token
 from pydantic import BaseModel
 import httpx
-from ..database import SessionLocal
+from ..database import get_db
+from sqlalchemy.orm import Session
 
 
 router = APIRouter()
 
 
 @router.get("/user/repos")
-async def get_repos(current_user: User = Depends(get_current_user)):
+async def get_repos(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
   base_url = "https://api.github.com/user/repos"
+  await get_valid_access_token(current_user, db)
   async with httpx.AsyncClient() as client:
     auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
     response = await client.get(base_url, headers=auth_header)
@@ -26,9 +28,10 @@ class ConnectRepoRequest(BaseModel):
 
 
 @router.post("/repos/connect")
-async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends(get_current_user)):
+async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
   owner = payload.owner
   name = payload.name
+  await get_valid_access_token(current_user, db)
   base_url = f"https://api.github.com/repos/{owner}/{name}"
   async with httpx.AsyncClient() as client:
     auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
@@ -36,7 +39,6 @@ async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends
     if response.status_code != 200:
       raise HTTPException(status_code=404, detail="Repository not found or not accessible")
     repo_info = response.json()
-    db = SessionLocal()
     repo = db.query(Repository).filter(Repository.github_repo_id == repo_info['id']).first()
 
     if repo:

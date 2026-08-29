@@ -1,14 +1,16 @@
-from fastapi import APIRouter, responses, Request, HTTPException
+from fastapi import APIRouter, responses, Request, HTTPException, Depends
 import httpx, secrets
 from ..config import settings
 from datetime import datetime, timedelta
-from ..database import SessionLocal
+from ..database import SessionLocal, get_db
 from ..models import User
 from jose import jwt, JWTError
+from sqlalchemy.orm import Session
 
 
 router = APIRouter()
 gh_client_id = settings.github_client_id
+gh_client_secret = settings.github_client_secret
 gh_redirect_uri = settings.github_redirect_uri
 
 
@@ -44,7 +46,7 @@ async def callback(code: str, state: str, request: Request):
                                                  "client_secret" : client_secret,
                                                  "code" : code,
                                                  "redirect_uri" : redirect_uri
-                                                }, headers={"Accept": "application/json"})
+                                                }, headers={"Accept" : "application/json"})
     token_data = response.json()
     token_expires_at = timedelta(seconds=int(token_data["expires_in"])) + datetime.now()
     auth_header = {"Authorization" : f"Bearer {token_data['access_token']}"}
@@ -75,7 +77,9 @@ async def callback(code: str, state: str, request: Request):
     response = responses.RedirectResponse(str(dash_url))
     response.set_cookie("jwt", jwt_token, httponly=True)
     return response
-def get_current_user(request: Request) -> User:
+
+  
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
   token = request.cookies.get("jwt")
   if token is None: raise HTTPException(status_code=401, detail="User not Authenticated")
   try:
@@ -83,9 +87,26 @@ def get_current_user(request: Request) -> User:
     user_id = int(decoded_token["sub"])
   except JWTError:
     raise HTTPException(status_code=401, detail="Invalid Token")
-  db = SessionLocal()
   user = db.query(User).filter(User.id == user_id).first()
   if not user: raise HTTPException(status_code=401, detail="User not found")
 
   return user
 
+
+async def get_valid_access_token(user: User, db) -> str:
+  if datetime.now() > user.token_expires_at:
+    async with httpx.AsyncClient() as client:
+      base_url = "https://github.com/login/oauth/access_token"
+      response = await client.post(base_url, data={"grant_type" : "refresh_token",
+                                                  "refresh_token" : user.refresh_token, 
+                                                  "client_id" : gh_client_id, 
+                                                  "client_secret" : gh_client_secret}, headers={"Accept" : "application/json"})
+      new_token = response.json()
+      user.access_token = new_token['access_token']
+      user.refresh_token = new_token['refresh_token']
+      user.token_expires_at = timedelta(seconds=int(new_token['expires_in'])) + datetime.now()
+      db.commit()
+      return user.access_token
+
+  else:
+    return user.access_token
