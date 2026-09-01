@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     github_client_secret: str
     github_redirect_uri: str
     session_secret: str
+    gemini_api_key: str
 
 
 settings = Settings()
