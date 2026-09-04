@@ -1,5 +1,26 @@
 import httpx, re
-from ..models import PRFile, Repository, User
+from ..models import PRFile, Repository, User, ReviewFinding, Severity, Category
+from google.genai import types
+from google import genai
+from ..config import settings
+from sqlalchemy.orm import Session
+import textwrap
+from pydantic import BaseModel
+
+
+client = genai.Client(api_key=settings.gemini_api_key)
+
+
+class Finding(BaseModel):
+  line_number: int
+  severity: Severity
+  category: Category
+  finding_text: str
+  suggestion: str
+
+
+class ReviewOutput(BaseModel):
+  findings: list[Finding]
 
 
 def get_diff(pr_file: PRFile):
@@ -50,4 +71,94 @@ def check_security_patterns(pr_file: PRFile):
 
   return hits
 
-  
+
+get_diff_declaration = types.FunctionDeclaration(
+  name = "get_diff",
+  description = "Returns the raw code diff (patch) for the file being reviewed in a pull request, showing exactly what lines were added or removed",
+
+)
+
+
+get_file_history_declaration = types.FunctionDeclaration(
+  name = "get_file_history",
+  description = "Returns the commit history of the file being reviewed in a pull request, showing commit hash, message, author, and date for a each commit",
+
+)
+
+
+check_security_patterns_declaration = types.FunctionDeclaration(
+  name = "check_security_patterns",
+  description = "Returns the results of a basic manual security run of the file, returning label of the check and the raw data of the match for all matches"
+
+)
+
+tools = types.Tool(function_declarations=[get_diff_declaration, get_file_history_declaration, check_security_patterns_declaration])
+
+async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db: Session):
+  file_path = pr_file.file_path
+  initial_prompt = textwrap.dedent(f"""
+  You are an expert code reviewer tasked with finding bugs and security issues for a given pull request file. 
+  The file you have to review is {file_path}. You have 3 tools available.
+  Use these tools to your advantage to give a detailed pull request review of your findings""").strip()
+
+  contents = [
+    types.Content(role="user", parts=[types.Part(text=initial_prompt)] )
+    ]
+
+  max_iterations = 5
+  iterations = 0
+  while iterations < max_iterations:
+    iterations += 1
+    response = await client.aio.models.generate_content(
+      model="gemini-3.5-flash-lite",
+      contents = contents,
+      config=types.GenerateContentConfig(tools=[tools])
+    )
+
+    contents.append(response.candidates[0].content)
+    part = response.candidates[0].content.parts[0]
+    if part.function_call:
+      function_name = part.function_call.name
+
+      if function_name == "get_diff":
+        tool_result = get_diff(pr_file)
+      elif function_name == "get_file_history":
+        tool_result = await get_file_history(pr_file, repo, current_user)
+      elif function_name == "check_security_patterns":
+        tool_result = check_security_patterns(pr_file)
+      function_response_part = types.Part.from_function_response(
+        name=function_name,
+        response={"result": tool_result},
+        )
+      contents.append(types.Content(role="tool", parts=[function_response_part]))
+    else:
+      break
+
+  response = await client.aio.models.generate_content(
+    model="gemini-3.5-flash-lite",
+    contents=contents,
+    config=types.GenerateContentConfig(
+      response_mime_type="application/json",
+      response_schema=ReviewOutput,
+    )
+  )
+  review_output = response.parsed
+  for finding in review_output.findings:
+    pr_id = pr_file.pr_id
+    file_id = pr_file.id
+    line_number = finding.line_number
+    severity = finding.severity
+    category = finding.category
+    finding_text = finding.finding_text
+    suggestion = finding.suggestion
+    finding = ReviewFinding(
+      pr_id = pr_id,
+      file_id = file_id,
+      line_number = line_number,
+      severity = severity,
+      category = category,
+      finding_text = finding_text,
+      suggestion = suggestion,
+    )
+    db.add(finding)
+  db.commit()
