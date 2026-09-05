@@ -1,10 +1,10 @@
-import httpx, re
+import httpx, re, textwrap, asyncio
 from ..models import PRFile, Repository, User, ReviewFinding, Severity, Category, RepoMemory
 from google.genai import types
+from google.genai.errors import APIError
 from google import genai
 from ..config import settings
 from sqlalchemy.orm import Session
-import textwrap
 from pydantic import BaseModel
 
 
@@ -108,6 +108,30 @@ get_repo_memory_declaration = types.FunctionDeclaration(
 )
 tools = types.Tool(function_declarations=[get_diff_declaration, get_file_history_declaration, check_security_patterns_declaration,get_repo_memory_declaration])
 
+
+def _extract_retry_delay(e: APIError) -> float | None:
+  try:
+    for detail in e.details["error"]["details"]:
+      if detail.get("@type", "").endswith("RetryInfo"):
+        return float(detail["retryDelay"].rstrip("s"))
+  except (KeyError, TypeError, ValueError):
+    return None
+  return None
+
+
+async def generate_with_retry(max_retries: int = 3, **kwargs):
+  attempt = 0
+  while True:
+    try:
+      return await client.aio.models.generate_content(**kwargs)
+    except APIError as e:
+      attempt += 1
+      if attempt > max_retries:
+        raise
+      delay = _extract_retry_delay(e) or (2 ** attempt)
+      await asyncio.sleep(delay)
+
+
 async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db: Session):
   file_path = pr_file.file_path
   initial_prompt = textwrap.dedent(f"""
@@ -123,11 +147,11 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
   iterations = 0
   while iterations < max_iterations:
     iterations += 1
-    response = await client.aio.models.generate_content(
-      model="gemini-3.5-flash-lite",
-      contents = contents,
-      config=types.GenerateContentConfig(tools=[tools])
-    )
+    response = await generate_with_retry(model="gemini-3.5-flash-lite", 
+                                          contents = contents,
+                                          config=types.GenerateContentConfig(tools=[tools]),
+                                          )
+
 
     contents.append(response.candidates[0].content)
     part = response.candidates[0].content.parts[0]
@@ -157,7 +181,7 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
       text="Based on everything you've gathered, provide your final structured review now, also produce an updated one paragraph memory summary of recurring patterns in this file, incorporating both the prior summary and this review's findings"
     )] )
   )
-  response = await client.aio.models.generate_content(
+  response = await generate_with_retry(
     model="gemini-3.5-flash-lite",
     contents=contents,
     config=types.GenerateContentConfig(
