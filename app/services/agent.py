@@ -1,5 +1,5 @@
 import httpx, re
-from ..models import PRFile, Repository, User, ReviewFinding, Severity, Category
+from ..models import PRFile, Repository, User, ReviewFinding, Severity, Category, RepoMemory
 from google.genai import types
 from google import genai
 from ..config import settings
@@ -21,6 +21,7 @@ class Finding(BaseModel):
 
 class ReviewOutput(BaseModel):
   findings: list[Finding]
+  updated_memory_summary: str
 
 
 def get_diff(pr_file: PRFile):
@@ -72,6 +73,14 @@ def check_security_patterns(pr_file: PRFile):
   return hits
 
 
+def get_repo_memory(pr_file: PRFile, repo: Repository, db: Session):
+  memory = db.query(RepoMemory).filter(RepoMemory.repo_id == repo.id, RepoMemory.file_path == pr_file.file_path).first()
+  if memory:
+    return memory.pattern_summary
+  else:
+    return "No prior memory for this file"
+
+  
 get_diff_declaration = types.FunctionDeclaration(
   name = "get_diff",
   description = "Returns the raw code diff (patch) for the file being reviewed in a pull request, showing exactly what lines were added or removed",
@@ -92,13 +101,18 @@ check_security_patterns_declaration = types.FunctionDeclaration(
 
 )
 
-tools = types.Tool(function_declarations=[get_diff_declaration, get_file_history_declaration, check_security_patterns_declaration])
+
+get_repo_memory_declaration = types.FunctionDeclaration(
+  name= "get_repo_memory",
+  description= "Returns memory on this file based on previous reviews if it exists, returning a summary of the findings from complied from any previous runs"
+)
+tools = types.Tool(function_declarations=[get_diff_declaration, get_file_history_declaration, check_security_patterns_declaration,get_repo_memory_declaration])
 
 async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db: Session):
   file_path = pr_file.file_path
   initial_prompt = textwrap.dedent(f"""
   You are an expert code reviewer tasked with finding bugs and security issues for a given pull request file. 
-  The file you have to review is {file_path}. You have 3 tools available.
+  The file you have to review is {file_path}. You have 4 tools available.
   Use these tools to your advantage to give a detailed pull request review of your findings""").strip()
 
   contents = [
@@ -126,8 +140,10 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
         tool_result = await get_file_history(pr_file, repo, current_user)
       elif function_name == "check_security_patterns":
         tool_result = check_security_patterns(pr_file)
+      elif function_name == "get_repo_memory":
+        tool_result = get_repo_memory(pr_file, repo, db)
       else:
-        tool_result = f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns."
+        tool_result = f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns, get_repo_memory."
       function_response_part = types.Part.from_function_response(
         name=function_name,
         response={"result": tool_result},
@@ -138,7 +154,7 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
 
   contents.append(
     types.Content(role="user", parts=[types.Part(
-      text="Based on everything you've gathered, provide your final structured review now."
+      text="Based on everything you've gathered, provide your final structured review now, also produce an updated one paragraph memory summary of recurring patterns in this file, incorporating both the prior summary and this review's findings"
     )] )
   )
   response = await client.aio.models.generate_content(
@@ -168,4 +184,14 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
       suggestion = suggestion,
     )
     db.add(finding)
+  repo_memory = db.query(RepoMemory).filter(RepoMemory.repo_id == repo.id, RepoMemory.file_path == pr_file.file_path).first()
+  if repo_memory:
+    repo_memory.pattern_summary = review_output.updated_memory_summary
+  else:
+    repo_memory = RepoMemory(
+      repo_id = repo.id,
+      file_path = pr_file.file_path,
+      pattern_summary = review_output.updated_memory_summary,
+    )
+    db.add(repo_memory)
   db.commit()

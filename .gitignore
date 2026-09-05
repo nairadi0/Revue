@@ -4,4 +4,4 @@ __pycache__/
 .venv/
 *.pyc
 RevueCommands.txt
-docs/notes.md
+docs/
