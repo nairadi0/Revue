@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .auth import get_current_user, get_valid_access_token
 from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile
-
+from ..services.agent import agent_review
 
 router = APIRouter()
 
@@ -65,7 +65,7 @@ async def get_prs(repo_id: int, current_user: User = Depends(get_current_user), 
 @router.get("/repos/{repo_id}/prs/{pr_number}/files")
 async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
-   if not repo_access: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+   if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
    repo = db.query(Repository).filter(Repository.id == repo_id).first()
    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
@@ -111,4 +111,16 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
    return files
             
 
-
+@router.post("/repos/{repo_id}/prs/{pr_number}/review")
+async def trigger_review(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
+    if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
+    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
+    pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
+    file_count = 0
+    for pr_file in pr_files:
+        await agent_review(pr_file, repo, current_user, db)
+        file_count += 1
+    return {"files_reviewed" : file_count}

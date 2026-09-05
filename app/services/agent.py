@@ -126,14 +126,21 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
         tool_result = await get_file_history(pr_file, repo, current_user)
       elif function_name == "check_security_patterns":
         tool_result = check_security_patterns(pr_file)
+      else:
+        tool_result = f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns."
       function_response_part = types.Part.from_function_response(
         name=function_name,
         response={"result": tool_result},
         )
-      contents.append(types.Content(role="tool", parts=[function_response_part]))
+      contents.append(types.Content(role="user", parts=[function_response_part]))
     else:
       break
 
+  contents.append(
+    types.Content(role="user", parts=[types.Part(
+      text="Based on everything you've gathered, provide your final structured review now."
+    )] )
+  )
   response = await client.aio.models.generate_content(
     model="gemini-3.5-flash-lite",
     contents=contents,

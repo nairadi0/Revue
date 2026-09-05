@@ -53,9 +53,9 @@ class AgentStatus(PyEnum):
 
 
 class Severity(PyEnum):
-  LOW = 1
-  MEDIUM = 2
-  HIGH = 3
+  LOW = "LOW"
+  MEDIUM = "MEDIUM"
+  HIGH = "HIGH"
 
 
 class Category(PyEnum):
