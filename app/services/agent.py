@@ -47,7 +47,7 @@ async def get_file_history(pr_file: PRFile, repo: Repository, current_user: User
       commit_hash = commit['sha']
       commit_message = commit['commit']['message']
       commit_date = commit['commit']['author']['date']
-      commit_author = commit['author']['login']
+      commit_author = (commit.get('author') or {}).get('login')
       commits.append({"hash" : commit_hash,
                       "message" : commit_message,
                       "author" : commit_author,
@@ -152,7 +152,7 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
                                           config=types.GenerateContentConfig(tools=[tools]),
                                           )
 
-
+    print(f"candidates: {response.candidates}, prompt_feedback: {getattr(response, 'prompt_feedback', None)}")
     contents.append(response.candidates[0].content)
     part = response.candidates[0].content.parts[0]
     if part.function_call:

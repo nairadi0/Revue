@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 import httpx
+from datetime import datetime
 from sqlalchemy.orm import Session
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from .auth import get_current_user, get_valid_access_token
-from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile, ReviewFinding
+from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile, ReviewFinding, AgentRun, AgentStatus
 from ..services.agent import agent_review
 
 router = APIRouter()
@@ -109,21 +110,51 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
                         })
       db.commit()
    return files
-            
 
-@router.post("/repos/{repo_id}/prs/{pr_number}/review")
-async def trigger_review(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
-    if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+
+async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_user_id: int):
+    db = SessionLocal()
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
-    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
     pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
-    file_count = 0
-    for pr_file in pr_files:
-        await agent_review(pr_file, repo, current_user, db)
-        file_count += 1
-    return {"files_reviewed" : file_count}
+    user = db.query(User).filter(User.id == current_user_id).first()
+    agent_run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
+    try:
+      agent_run.status = AgentStatus.RUNNING
+      db.commit()
+      try: 
+         file_count = 0
+         for pr_file in pr_files:
+            await agent_review(pr_file, repo, user, db)
+            file_count += 1
+         agent_run.status = AgentStatus.SUCCESS
+         agent_run.completed_at = datetime.now()
+         db.commit()
+      except Exception as e:
+          agent_run.status = AgentStatus.FAILED
+          agent_run.completed_at = datetime.now()
+          print(f"pr_review failed: {e}")
+          db.commit()
+    finally:
+      db.close()
+
+@router.post("/repos/{repo_id}/prs/{pr_number}/review")
+async def trigger_review(repo_id: int, pr_number: int, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
+    if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
+    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
+    agent_run = AgentRun(
+        pr_id = pr.id,
+        status = AgentStatus.PENDING,
+        started_at = datetime.now(),
+    )
+    db.add(agent_run)
+    db.commit()
+    background_tasks.add_task(pr_review, agent_run.id, repo_id, pr_number, current_user.id)
+    return {"run_id" : agent_run.id,
+            "status" : agent_run.status, 
+            }
 
 
 @router.get("/repos/{repo_id}/prs/{pr_number}/findings")
