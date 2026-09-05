@@ -3,7 +3,7 @@ import httpx
 from sqlalchemy.orm import Session
 from ..database import get_db
 from .auth import get_current_user, get_valid_access_token
-from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile
+from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile, ReviewFinding
 from ..services.agent import agent_review
 
 router = APIRouter()
@@ -124,3 +124,31 @@ async def trigger_review(repo_id: int, pr_number: int, current_user: User = Depe
         await agent_review(pr_file, repo, current_user, db)
         file_count += 1
     return {"files_reviewed" : file_count}
+
+
+@router.get("/repos/{repo_id}/prs/{pr_number}/findings")
+async def view_findings(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+   repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
+   if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+   repo = db.query(Repository).filter(Repository.id == repo_id).first()
+   pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
+   if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
+   review_findings = db.query(ReviewFinding).filter(ReviewFinding.pr_id == pr.id)
+   findings = []
+   for finding in review_findings:
+       finding_id = finding.id
+       file_id = finding.file_id
+       line_number = finding.line_number
+       severity = finding.severity
+       category = finding.category
+       finding_text = finding.finding_text
+       suggestion = finding.suggestion
+       findings.append({"id" : finding_id,
+                        "file_id" : file_id,
+                        "line_number" : line_number,
+                        "severity" : severity, 
+                        "category" : category, 
+                        "finding_text" : finding_text,
+                        "suggestion" : suggestion,
+                        })
+   return findings
