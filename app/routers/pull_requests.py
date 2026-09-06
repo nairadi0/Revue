@@ -161,7 +161,6 @@ async def trigger_review(repo_id: int, pr_number: int, background_tasks: Backgro
 async def view_findings(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
    if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
-   repo = db.query(Repository).filter(Repository.id == repo_id).first()
    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
    review_findings = db.query(ReviewFinding).filter(ReviewFinding.pr_id == pr.id)
@@ -183,3 +182,18 @@ async def view_findings(repo_id: int, pr_number: int, current_user: User = Depen
                         "suggestion" : suggestion,
                         })
    return findings
+
+
+@router.get("/agent_runs/{run_id}")
+async def pr_run(run_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    agent_run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
+    if agent_run is None: raise HTTPException(status_code=404, detail="Pull request review not found")
+    pr = db.query(PullRequest).filter(PullRequest.id == agent_run.pr_id).first()
+    repo = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == pr.repo_id).first()
+    if repo is None: raise HTTPException(status_code=403, detail="No permission to view this repository")
+
+    return {"status" : agent_run.status,
+            "started_at" : agent_run.started_at,
+            "completed_at" : agent_run.completed_at,
+            }
+
