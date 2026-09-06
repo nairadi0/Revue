@@ -73,7 +73,7 @@ async def callback(code: str, state: str, request: Request):
     claims = {"sub" : str(user.id),
               "exp" : datetime.now() + timedelta(days=7)}
     jwt_token = jwt.encode(claims, settings.session_secret, "HS256")
-    dash_url = "http://localhost:8000/dashboard"
+    dash_url = "http://localhost:5173/dashboard"
     response = responses.RedirectResponse(str(dash_url))
     response.set_cookie("jwt", jwt_token, httponly=True)
     return response
