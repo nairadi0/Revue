@@ -35,6 +35,7 @@ interface AgentRun {
 
 
 const POLL_INTERVAL_MS = 3000
+const MAX_POLL_ATTEMPTS = 100
 
 
 function PrDetail() {
@@ -46,6 +47,7 @@ function PrDetail() {
   const [run, setRun] = useState<AgentRun | null>(null)
   const [error, setError] = useState<string | null>(null)
   const pollHandle = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollAttempts = useRef(0)
 
   const stopPolling = () => {
     if (pollHandle.current !== null) {
@@ -92,7 +94,15 @@ function PrDetail() {
   }
 
   const pollRun = (runId: number) => {
+    pollAttempts.current = 0
     pollHandle.current = setInterval(async () => {
+      pollAttempts.current += 1
+      if (pollAttempts.current > MAX_POLL_ATTEMPTS) {
+        stopPolling()
+        setError('Review is taking much longer than expected — check back later.')
+        setRun(null)
+        return
+      }
       const response = await fetch(`${API_BASE}/agent_runs/${runId}`, {
         credentials: 'include',
       })
@@ -104,6 +114,7 @@ function PrDetail() {
       if (!response.ok) {
         stopPolling()
         setError(await extractErrorMessage(response, 'Failed to check run status'))
+        setRun(null)
         return
       }
       const data: AgentRun = await response.json()

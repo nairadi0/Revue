@@ -14,12 +14,21 @@ router = APIRouter()
 async def get_repos(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
   base_url = "https://api.github.com/user/repos"
   await get_valid_access_token(current_user, db)
+  auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
+  all_repos = []
   async with httpx.AsyncClient() as client:
-    auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
-    response = await client.get(base_url, headers=auth_header)
-    repo_data = response.json()
+    url = base_url
+    params = {"per_page": 100}
+    while url:
+      response = await client.get(url, headers=auth_header, params=params)
+      if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Failed to fetch repositories from GitHub")
+      all_repos.extend(response.json())
+      next_link = response.links.get("next")
+      url = next_link["url"] if next_link else None
+      params = None  # the next-page URL already includes query params
 
-    return repo_data
+  return all_repos
 
 
 class ConnectRepoRequest(BaseModel):

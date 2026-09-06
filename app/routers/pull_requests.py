@@ -118,16 +118,26 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
 
 async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_user_id: int):
     db = SessionLocal()
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
-    pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
-    user = db.query(User).filter(User.id == current_user_id).first()
-    agent_run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
-    run_log = []
     try:
+      agent_run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
+      if agent_run is None:
+          return  
+
+      repo = db.query(Repository).filter(Repository.id == repo_id).first()
+      pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
+      user = db.query(User).filter(User.id == current_user_id).first()
+      if repo is None or pr is None or user is None:
+          agent_run.status = AgentStatus.FAILED
+          agent_run.completed_at = datetime.now()
+          agent_run.tool_calls_log = [{"error": "repo, pull request, or user no longer exists"}]
+          db.commit()
+          return
+
+      pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
+      run_log = []
       agent_run.status = AgentStatus.RUNNING
       db.commit()
-      try: 
+      try:
          file_count = 0
          for pr_file in pr_files:
             run_log.extend(await agent_review(pr_file, repo, user, db))
