@@ -26,7 +26,7 @@ async def get_repos(current_user: User = Depends(get_current_user), db: Session 
       all_repos.extend(response.json())
       next_link = response.links.get("next")
       url = next_link["url"] if next_link else None
-      params = None  # the next-page URL already includes query params
+      params = None 
 
   return all_repos
 
@@ -79,3 +79,23 @@ async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends
       "name": repo.name,
       "default_branch": repo.default_branch,
     }
+
+
+@router.get("/user/connected-repos")
+def get_connected_repos(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+  connected_repos = db.query(UserRepository, Repository).join(Repository, UserRepository.repo_id == Repository.id).filter(UserRepository.user_id == current_user.id)
+  repos = []
+  for user_repo, repo in connected_repos.all():
+    id = repo.id
+    name = repo.name
+    owner = repo.owner
+    connected_at = user_repo.connected_at
+    repos.append({"id" : id,
+                  "name" : name,
+                  "owner" : owner,
+                  "connected_at" : connected_at,
+                  })
+
+  return repos
+                 
+    
