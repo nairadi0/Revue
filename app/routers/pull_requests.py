@@ -201,3 +201,23 @@ async def pr_run(run_id: int, current_user: User = Depends(get_current_user), db
             "completed_at" : agent_run.completed_at,
             }
 
+
+@router.get("/agent_runs")
+async def show_agent_runs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+   query = db.query(AgentRun, PullRequest).join(PullRequest, AgentRun.pr_id == PullRequest.id).join(UserRepository, PullRequest.repo_id == UserRepository.repo_id).filter(UserRepository.user_id == current_user.id)
+   runs = []
+   for run, pr in query.all():
+       id = run.id
+       pr_number = pr.pr_number
+       title = pr.title
+       status = run.status
+       started_at = run.started_at
+       completed_at = run.completed_at
+       runs.append({"id" : id,
+                    "pr_number" : pr_number,
+                    "title" : title,
+                    "status" : status,
+                    "started_at" : started_at,
+                    "completed_at" : completed_at,
+                    })
+   return runs
