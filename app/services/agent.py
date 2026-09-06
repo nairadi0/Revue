@@ -123,7 +123,7 @@ async def generate_with_retry(max_retries: int = 3, **kwargs):
   attempt = 0
   while True:
     try:
-      return await client.aio.models.generate_content(**kwargs)
+      return await client.aio.models.generate_content(**kwargs), attempt
     except APIError as e:
       attempt += 1
       if attempt > max_retries:
@@ -145,13 +145,14 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
 
   max_iterations = 5
   iterations = 0
+  file_log = []
   while iterations < max_iterations:
     iterations += 1
-    response = await generate_with_retry(model="gemini-3.5-flash-lite", 
+    response, retries = await generate_with_retry(model="gemini-3.5-flash-lite", 
                                           contents = contents,
                                           config=types.GenerateContentConfig(tools=[tools]),
                                           )
-
+    
     print(f"candidates: {response.candidates}, prompt_feedback: {getattr(response, 'prompt_feedback', None)}")
     contents.append(response.candidates[0].content)
     part = response.candidates[0].content.parts[0]
@@ -173,6 +174,11 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
         response={"result": tool_result},
         )
       contents.append(types.Content(role="user", parts=[function_response_part]))
+      file_log.append({"file" : file_path,
+                       "iteration" : iterations,
+                       "tool" : function_name,
+                       "result_preview" : str(tool_result)[:200],
+                       "retries" : retries})
     else:
       break
 
@@ -181,7 +187,7 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
       text="Based on everything you've gathered, provide your final structured review now, also produce an updated one paragraph memory summary of recurring patterns in this file, incorporating both the prior summary and this review's findings"
     )] )
   )
-  response = await generate_with_retry(
+  response, retries = await generate_with_retry(
     model="gemini-3.5-flash-lite",
     contents=contents,
     config=types.GenerateContentConfig(
@@ -189,6 +195,9 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
       response_schema=ReviewOutput,
     )
   )
+  file_log.append({"file" : file_path,
+                   "step" : "final_review",
+                   "retries" : retries})
   review_output = response.parsed
   for finding in review_output.findings:
     pr_id = pr_file.pr_id
@@ -219,3 +228,5 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
     )
     db.add(repo_memory)
   db.commit()
+
+  return file_log

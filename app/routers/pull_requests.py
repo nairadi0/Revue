@@ -119,22 +119,26 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_use
     pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
     user = db.query(User).filter(User.id == current_user_id).first()
     agent_run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
+    run_log = []
     try:
       agent_run.status = AgentStatus.RUNNING
       db.commit()
       try: 
          file_count = 0
          for pr_file in pr_files:
-            await agent_review(pr_file, repo, user, db)
+            run_log.extend(await agent_review(pr_file, repo, user, db))
             file_count += 1
          agent_run.status = AgentStatus.SUCCESS
          agent_run.completed_at = datetime.now()
+         agent_run.tool_calls_log = run_log
          db.commit()
       except Exception as e:
           agent_run.status = AgentStatus.FAILED
           agent_run.completed_at = datetime.now()
-          print(f"pr_review failed: {e}")
+          run_log.append({"error" : str(e)})
+          agent_run.tool_calls_log = run_log
           db.commit()
+          
     finally:
       db.close()
 
