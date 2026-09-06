@@ -5,3 +5,8 @@ __pycache__/
 *.pyc
 RevueCommands.txt
 docs/
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
