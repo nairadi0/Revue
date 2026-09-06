@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
 from .auth import get_current_user, get_valid_access_token
@@ -86,11 +86,15 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
           additions = file['additions']
           deletions = file['deletions']
           patch_text = file.get('patch', '')
-          file = db.query(PRFile).filter(PRFile.pr_id == pr.id, PRFile.file_path == file_path).first()
-          if file:
-              file.additions = additions
-              file.deletions = deletions
-              file.patch_text = patch_text
+          status = file['status']
+          lookup_path = file['previous_filename'] if status == 'renamed' else file_path
+          existing = db.query(PRFile).filter(PRFile.pr_id == pr.id, PRFile.file_path == lookup_path).first()
+          if existing:
+              existing.file_path = file_path
+              existing.additions = additions
+              existing.deletions = deletions
+              existing.patch_text = patch_text
+              file = existing
           else: 
               file = PRFile (
                   pr_id = pr.id,
@@ -148,10 +152,13 @@ async def trigger_review(repo_id: int, pr_number: int, background_tasks: Backgro
     if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
     pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
     if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
+    runs = db.query(AgentRun).filter(AgentRun.triggered_by_user_id == current_user.id, AgentRun.started_at >= (datetime.now() - timedelta(hours=24)))
+    if runs.count() >= 5: raise HTTPException(status_code=429, detail="You have reached the daily limit for Pull Request reviews")
     agent_run = AgentRun(
         pr_id = pr.id,
         status = AgentStatus.PENDING,
         started_at = datetime.now(),
+        triggered_by_user_id = current_user.id
     )
     db.add(agent_run)
     db.commit()

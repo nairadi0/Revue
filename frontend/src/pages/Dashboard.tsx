@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-
-const API_BASE = 'http://localhost:8000'
+import { API_BASE, extractErrorMessage } from '../api'
 
 interface GithubRepo {
   id: number
@@ -28,7 +27,7 @@ function Dashboard() {
         return
       }
       if (!response.ok) {
-        setError(`Failed to load Repositories: ${response.status}`)
+        setError(await extractErrorMessage(response, 'Failed to load repositories'))
         return
       }
       const data: GithubRepo[] = await response.json()
@@ -45,7 +44,7 @@ function Dashboard() {
       body: JSON.stringify({ owner: repo.owner.login, name: repo.name }),
     })
     if (!response.ok) {
-      setError(`Failed to connect ${repo.name}: ${response.status}`)
+      setError(await extractErrorMessage(response, `Failed to connect ${repo.name}`))
       return
     }
     const connected = await response.json()

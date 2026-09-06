@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-
-
-const API_BASE = 'http://localhost:8000'
+import { API_BASE, extractErrorMessage } from '../api'
 
 
 interface PRFile {
@@ -67,7 +65,7 @@ function PrDetail() {
         return
       }
       if (!response.ok) {
-        setError(`Failed to load files: ${response.status}`)
+        setError(await extractErrorMessage(response, 'Failed to load files'))
         return
       }
       setFiles(await response.json())
@@ -87,7 +85,7 @@ function PrDetail() {
       return
     }
     if (!response.ok) {
-      setError(`Failed to load findings: ${response.status}`)
+      setError(await extractErrorMessage(response, 'Failed to load findings'))
       return
     }
     setFindings(await response.json())
@@ -105,7 +103,7 @@ function PrDetail() {
       }
       if (!response.ok) {
         stopPolling()
-        setError(`Failed to check run status: ${response.status}`)
+        setError(await extractErrorMessage(response, 'Failed to check run status'))
         return
       }
       const data: AgentRun = await response.json()
@@ -131,7 +129,7 @@ function PrDetail() {
       return
     }
     if (!response.ok) {
-      setError(`Failed to start review: ${response.status}`)
+      setError(await extractErrorMessage(response, 'Failed to start review'))
       return
     }
     const data: { run_id: number; status: RunStatus } = await response.json()

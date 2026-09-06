@@ -1,10 +1,7 @@
 import { useParams } from 'react-router'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-
-
-
-const API_BASE = 'http://localhost:8000'
+import { API_BASE, extractErrorMessage } from '../api'
 
 
 interface PR {
@@ -32,7 +29,7 @@ function PrList() {
           return
         }
         if (!response.ok) {
-          setError(`Failed to load Pull Requests: ${response.status}`)
+          setError(await extractErrorMessage(response, 'Failed to load pull requests'))
           return
         }
         const data: PR[] = await response.json()

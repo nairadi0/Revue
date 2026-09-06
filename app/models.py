@@ -123,3 +123,4 @@ class AgentRun(Base):
   started_at: Mapped[datetime]
   completed_at: Mapped[datetime | None]
   tool_calls_log: Mapped[list] = mapped_column(JSON, default=list)
+  triggered_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
