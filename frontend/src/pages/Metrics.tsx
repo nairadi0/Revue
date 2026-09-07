@@ -90,8 +90,12 @@ function Metrics() {
 
           <Card>
             <CardHeader title="Findings over time" hint="By day the finding was recorded" />
-            {data.findings_over_time.length === 0 ? (
-              <p className={s.empty}>No findings yet.</p>
+            {data.findings_over_time.length < 2 ? (
+              <p className={s.empty}>
+                {data.findings_over_time.length === 0
+                  ? 'No findings yet.'
+                  : `All ${formatCount(total)} findings so far were recorded on ${shortDate(data.findings_over_time[0].date)}. A trend appears once findings span more than one day.`}
+              </p>
             ) : (
               <TrendChart
                 points={data.findings_over_time.map((item) => ({ label: shortDate(item.date), value: item.count }))}

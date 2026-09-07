@@ -41,8 +41,8 @@ export interface TrendPoint {
   value: number
 }
 
-const W = 640
-const H = 200
+const W = 900
+const H = 190
 const PAD = { top: 10, right: 10, bottom: 22, left: 30 }
 const PLOT_W = W - PAD.left - PAD.right
 const PLOT_H = H - PAD.top - PAD.bottom

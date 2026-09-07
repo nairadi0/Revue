@@ -17,6 +17,9 @@
   text-align: center;
   color: var(--text-3);
   font-size: 0.8125rem;
+  max-width: 46ch;
+  margin: 0 auto;
+  line-height: 1.6;
 }
 
 .skeletons {
