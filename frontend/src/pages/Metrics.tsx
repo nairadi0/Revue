@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
-import { API_BASE, extractErrorMessage } from '../api'
+import { useApiQuery } from '../hooks/useApiQuery'
+import { formatCount, shortPath } from '../lib/format'
+import AppLayout from '../components/AppLayout'
+import { BarList, TrendChart } from '../components/charts'
+import type { BarItem } from '../components/charts'
+import { Card, CardHeader, EmptyState, ErrorBanner, PageHeader, Skeleton, StatTile } from '../components/ui'
+import { SEVERITY_COLOR, SEVERITY_ORDER } from '../lib/severity'
+import { ChartIcon } from '../components/icons'
+import s from './Metrics.module.css'
 
 interface MetricsData {
   severity_counts: { severity: string; count: number }[]
@@ -9,113 +15,101 @@ interface MetricsData {
   most_flagged_authors: { author: string; count: number }[]
 }
 
-const SEVERITY_COLOR: Record<string, string> = {
-  LOW: '#0ca30c',
-  MEDIUM: '#fab219',
-  HIGH: '#d03b3b',
+function shortDate(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function BarRow({ label, count, max, color }: { label: string; count: number; max: number; color: string }) {
-  const widthPct = max === 0 ? 0 : Math.max((count / max) * 100, 3)
+function Section({ title, hint, items, showSwatch }: { title: string; hint?: string; items: BarItem[]; showSwatch?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-      <div style={{ width: '12rem', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={label}>
-        {label}
-      </div>
-      <div style={{ flex: 1, background: '#e1e0d9', borderRadius: '4px', height: '1.25rem' }}>
-        <div
-          style={{
-            width: `${widthPct}%`,
-            background: color,
-            height: '100%',
-            borderRadius: '4px',
-            transition: 'width 0.2s',
-          }}
-          title={`${label}: ${count}`}
-        />
-      </div>
-      <div style={{ width: '2rem', textAlign: 'right', fontSize: '0.85rem' }}>{count}</div>
-    </div>
+    <Card>
+      <CardHeader title={title} hint={hint} />
+      {items.length === 0 ? <p className={s.empty}>No findings yet.</p> : <BarList items={items} showSwatch={showSwatch} />}
+    </Card>
   )
 }
 
 function Metrics() {
-  const navigate = useNavigate()
-  const [data, setData] = useState<MetricsData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { data, error, loading } = useApiQuery<MetricsData>('/metrics', 'Failed to load metrics')
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      const response = await fetch(`${API_BASE}/metrics`, { credentials: 'include' })
-      if (response.status === 401) {
-        navigate('/')
-        return
-      }
-      if (!response.ok) {
-        setError(await extractErrorMessage(response, 'Failed to load metrics'))
-        return
-      }
-      setData(await response.json())
-    }
-    fetchMetrics()
-  }, [navigate])
+  const total = (data?.severity_counts ?? []).reduce((sum, item) => sum + item.count, 0)
+  const high = data?.severity_counts.find((item) => item.severity === 'HIGH')?.count ?? 0
+  const activeDays = data?.findings_over_time.length ?? 0
+
+  const severityItems: BarItem[] = SEVERITY_ORDER.flatMap((severity) => {
+    const match = data?.severity_counts.find((item) => item.severity === severity)
+    return match ? [{ key: severity, label: severity, value: match.count, color: SEVERITY_COLOR[severity] }] : []
+  })
+
+  const fileItems: BarItem[] = (data?.most_flagged_files ?? []).map((item) => ({
+    key: item.file_path,
+    label: shortPath(item.file_path),
+    value: item.count,
+  }))
+
+  const authorItems: BarItem[] = (data?.most_flagged_authors ?? []).map((item) => ({
+    key: item.author,
+    label: item.author,
+    value: item.count,
+  }))
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '48rem' }}>
-      <p>
-        <Link to="/dashboard">Back to Dashboard</Link> · <Link to="/runs">Agent Runs</Link>
-      </p>
-      <h1>Metrics</h1>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {!data && !error && <p>Loading...</p>}
-      {data && (
+    <AppLayout>
+      <PageHeader
+        title="Metrics"
+        subtitle="Everything the agent has flagged across your connected repositories."
+      />
+
+      {error && <ErrorBanner message={error} />}
+
+      {loading && (
+        <div className={s.skeletons}>
+          <Skeleton height={96} radius="var(--r-lg)" />
+          <Skeleton height={280} radius="var(--r-lg)" />
+        </div>
+      )}
+
+      {data && total === 0 && !error && (
+        <EmptyState
+          icon={<ChartIcon size={26} />}
+          title="Nothing to chart yet"
+          text="Once the agent reviews a pull request, its findings will be summarised here."
+        />
+      )}
+
+      {data && total > 0 && (
         <>
-          <section style={{ marginBottom: '2rem' }}>
-            <h2>Findings by severity</h2>
-            {data.severity_counts.length === 0 && <p>No findings yet.</p>}
-            {(() => {
-              const max = Math.max(...data.severity_counts.map((s) => s.count), 1)
-              return data.severity_counts.map((s) => (
-                <BarRow key={s.severity} label={s.severity} count={s.count} max={max} color={SEVERITY_COLOR[s.severity] ?? '#2a78d6'} />
-              ))
-            })()}
-          </section>
+          <div className={s.tiles}>
+            <StatTile label="Total findings" value={formatCount(total)} />
+            <StatTile
+              label="High severity"
+              value={formatCount(high)}
+              hint={total > 0 ? `${Math.round((high / total) * 100)}% of all findings` : undefined}
+            />
+            <StatTile label="Days with findings" value={formatCount(activeDays)} />
+          </div>
 
-          <section style={{ marginBottom: '2rem' }}>
-            <h2>Findings over time</h2>
-            {data.findings_over_time.length === 0 && <p>No findings yet.</p>}
-            {(() => {
-              const max = Math.max(...data.findings_over_time.map((d) => d.count), 1)
-              return data.findings_over_time.map((d) => (
-                <BarRow key={d.date} label={d.date} count={d.count} max={max} color="#2a78d6" />
-              ))
-            })()}
-          </section>
+          <Card>
+            <CardHeader title="Findings over time" hint="By day the finding was recorded" />
+            {data.findings_over_time.length === 0 ? (
+              <p className={s.empty}>No findings yet.</p>
+            ) : (
+              <TrendChart
+                points={data.findings_over_time.map((item) => ({ label: shortDate(item.date), value: item.count }))}
+              />
+            )}
+          </Card>
 
-          <section style={{ marginBottom: '2rem' }}>
-            <h2>Most flagged files</h2>
-            {data.most_flagged_files.length === 0 && <p>No findings yet.</p>}
-            {(() => {
-              const max = Math.max(...data.most_flagged_files.map((f) => f.count), 1)
-              return data.most_flagged_files.map((f) => (
-                <BarRow key={f.file_path} label={f.file_path} count={f.count} max={max} color="#2a78d6" />
-              ))
-            })()}
-          </section>
+          <div className={s.grid}>
+            <Section title="Findings by severity" items={severityItems} showSwatch />
+            <Section title="Most flagged authors" hint="Top 10" items={authorItems} />
+          </div>
 
-          <section style={{ marginBottom: '2rem' }}>
-            <h2>Most flagged authors</h2>
-            {data.most_flagged_authors.length === 0 && <p>No findings yet.</p>}
-            {(() => {
-              const max = Math.max(...data.most_flagged_authors.map((a) => a.count), 1)
-              return data.most_flagged_authors.map((a) => (
-                <BarRow key={a.author} label={a.author} count={a.count} max={max} color="#2a78d6" />
-              ))
-            })()}
-          </section>
+          <div className={s.grid}>
+            <Section title="Most flagged files" hint="Top 10" items={fileItems} />
+          </div>
         </>
       )}
-    </div>
+    </AppLayout>
   )
 }
 

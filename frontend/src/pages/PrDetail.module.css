@@ -1,0 +1,209 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.runCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  border-radius: var(--r-md);
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.runIcon {
+  color: var(--accent);
+  flex: none;
+}
+
+.runText {
+  flex: 1;
+}
+
+.runHint {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  margin-top: 0.1rem;
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.summaryLabel {
+  font-size: 0.8125rem;
+  color: var(--text-3);
+  margin-right: 0.15rem;
+}
+
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.finding {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.findingBar {
+  height: 2px;
+}
+
+.findingBody {
+  padding: 1rem 1.15rem;
+}
+
+.findingTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.location {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-3);
+  min-width: 0;
+}
+
+.locationPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.findingText {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.suggestion {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface-2);
+}
+
+.suggestionLabel {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
+.suggestionText {
+  font-size: 0.875rem;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.side {
+  position: sticky;
+  top: 76px;
+}
+
+@media (max-width: 900px) {
+  .side {
+    position: static;
+  }
+}
+
+.sideTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.filePath {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.fileDir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+
+.fileName {
+  flex: none;
+}
+
+.diffstat {
+  display: flex;
+  gap: 0.4rem;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.additions {
+  color: var(--good);
+}
+
+.deletions {
+  color: var(--critical);
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

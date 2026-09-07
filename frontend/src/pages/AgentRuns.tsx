@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
-import { API_BASE, extractErrorMessage } from '../api'
+import { Link } from 'react-router'
+import { useApiQuery } from '../hooks/useApiQuery'
+import { formatDateTime, formatDuration, formatRelative } from '../lib/format'
+import AppLayout from '../components/AppLayout'
+import { EmptyState, ErrorBanner, PageHeader, Skeleton, StatusBadge } from '../components/ui'
+import { ActivityIcon, ChevronRight } from '../components/icons'
+import s from './AgentRuns.module.css'
 
 interface AgentRunSummary {
   id: number
@@ -11,83 +15,68 @@ interface AgentRunSummary {
   completed_at: string | null
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  PENDING: '#898781',
-  RUNNING: '#fab219',
-  SUCCESS: '#0ca30c',
-  FAILED: '#d03b3b',
-}
-
-function formatDuration(startedAt: string, completedAt: string | null): string {
-  if (!completedAt) return '—'
-  const seconds = Math.max(0, (new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)
-  return `${seconds.toFixed(1)}s`
-}
-
 function AgentRuns() {
-  const navigate = useNavigate()
-  const [runs, setRuns] = useState<AgentRunSummary[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const { data: runs, error, loading } = useApiQuery<AgentRunSummary[]>('/agent_runs', 'Failed to load agent runs')
 
-  useEffect(() => {
-    const fetchRuns = async () => {
-      const response = await fetch(`${API_BASE}/agent_runs`, { credentials: 'include' })
-      if (response.status === 401) {
-        navigate('/')
-        return
-      }
-      if (!response.ok) {
-        setError(await extractErrorMessage(response, 'Failed to load agent runs'))
-        return
-      }
-      setRuns(await response.json())
-    }
-    fetchRuns()
-  }, [navigate])
+  const sorted = [...(runs ?? [])].sort(
+    (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+  )
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <p>
-        <Link to="/dashboard">Back to Dashboard</Link> · <Link to="/metrics">Metrics</Link>
-      </p>
-      <h1>Agent Runs</h1>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #c3c2b7' }}>
-            <th style={{ padding: '0.5rem' }}>PR</th>
-            <th style={{ padding: '0.5rem' }}>Status</th>
-            <th style={{ padding: '0.5rem' }}>Started</th>
-            <th style={{ padding: '0.5rem' }}>Duration</th>
-            <th style={{ padding: '0.5rem' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {runs.map((run) => (
-            <tr key={run.id} style={{ borderBottom: '1px solid #e1e0d9' }}>
-              <td style={{ padding: '0.5rem' }}>
-                #{run.pr_number} {run.title}
-              </td>
-              <td style={{ padding: '0.5rem' }}>
-                <span
-                  style={{
-                    color: STATUS_COLOR[run.status] ?? '#0b0b0b',
-                    fontWeight: 600,
-                  }}
-                >
-                  {run.status}
-                </span>
-              </td>
-              <td style={{ padding: '0.5rem' }}>{new Date(run.started_at).toLocaleString()}</td>
-              <td style={{ padding: '0.5rem' }}>{formatDuration(run.started_at, run.completed_at)}</td>
-              <td style={{ padding: '0.5rem' }}>
-                <Link to={`/runs/${run.id}`}>View details</Link>
-              </td>
-            </tr>
+    <AppLayout>
+      <PageHeader
+        title="Agent runs"
+        subtitle="Every review the agent has run across your connected repositories, newest first."
+      />
+
+      {error && <ErrorBanner message={error} />}
+
+      {loading && (
+        <div className={s.skeletons}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={56} radius="var(--r-md)" />
           ))}
-        </tbody>
-      </table>
-    </div>
+        </div>
+      )}
+
+      {!loading && sorted.length === 0 && !error && (
+        <EmptyState
+          icon={<ActivityIcon size={26} />}
+          title="No runs yet"
+          text="Trigger a review from any pull request and it will show up here."
+        />
+      )}
+
+      {sorted.length > 0 && (
+        <div className={s.table}>
+          <div className={s.head}>
+            <span>Pull request</span>
+            <span>Status</span>
+            <span>Started</span>
+            <span>Duration</span>
+            <span />
+          </div>
+          {sorted.map((run) => (
+            <Link key={run.id} to={`/runs/${run.id}`} className={s.row}>
+              <div className={s.pr}>
+                <div className={s.title}>{run.title}</div>
+                <div className={s.sub}>
+                  #{run.pr_number} · run {run.id}
+                </div>
+              </div>
+              <StatusBadge status={run.status} />
+              <span className={s.cell} title={formatDateTime(run.started_at)}>
+                {formatRelative(run.started_at)}
+              </span>
+              <span className={s.cell}>{formatDuration(run.started_at, run.completed_at)}</span>
+              <span className={s.chevron}>
+                <ChevronRight size={14} />
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </AppLayout>
   )
 }
 

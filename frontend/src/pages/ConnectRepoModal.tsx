@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
-import { API_BASE, extractErrorMessage } from '../api'
+import { useMemo, useState } from 'react'
+import { ApiError, apiPost } from '../api'
+import { useApiQuery } from '../hooks/useApiQuery'
+import Modal from '../components/Modal'
+import { Button, ErrorBanner, Input, Skeleton, Spinner } from '../components/ui'
+import { CheckIcon, SearchIcon } from '../components/icons'
+import type { ConnectedRepo } from './Dashboard'
+import s from './ConnectRepoModal.module.css'
 
 interface GithubRepo {
   id: number
   name: string
   owner: { login: string }
-}
-
-interface ConnectedRepo {
-  id: number
-  name: string
-  owner: string
 }
 
 interface ConnectRepoModalProps {
@@ -20,121 +20,91 @@ interface ConnectRepoModalProps {
 }
 
 function ConnectRepoModal({ connectedRepos, onClose, onConnected }: ConnectRepoModalProps) {
-  const [repos, setRepos] = useState<GithubRepo[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: repos, error: loadError, loading } = useApiQuery<GithubRepo[]>('/user/repos', 'Failed to load repositories')
   const [search, setSearch] = useState('')
   const [connectingId, setConnectingId] = useState<number | null>(null)
+  const [connectError, setConnectError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchRepos = async () => {
-      const response = await fetch(`${API_BASE}/user/repos`, {
-        credentials: 'include',
-      })
-      if (!response.ok) {
-        setError(await extractErrorMessage(response, 'Failed to load repositories'))
-        setLoading(false)
-        return
-      }
-      const data: GithubRepo[] = await response.json()
-      setRepos(data)
-      setLoading(false)
-    }
-    fetchRepos()
-  }, [])
+  const connectedKeys = useMemo(
+    () => new Set(connectedRepos.map((repo) => `${repo.owner}/${repo.name}`)),
+    [connectedRepos],
+  )
 
-  const isConnected = (repo: GithubRepo) =>
-    connectedRepos.some((c) => c.owner === repo.owner.login && c.name === repo.name)
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const all = repos ?? []
+    return query ? all.filter((repo) => `${repo.owner.login}/${repo.name}`.toLowerCase().includes(query)) : all
+  }, [repos, search])
 
   const handleConnect = async (repo: GithubRepo) => {
     setConnectingId(repo.id)
-    const response = await fetch(`${API_BASE}/repos/connect`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner: repo.owner.login, name: repo.name }),
-    })
-    setConnectingId(null)
-    if (!response.ok) {
-      setError(await extractErrorMessage(response, `Failed to connect ${repo.name}`))
-      return
+    setConnectError(null)
+    try {
+      await apiPost('/repos/connect', { owner: repo.owner.login, name: repo.name }, `Failed to connect ${repo.name}`)
+      onConnected()
+    } catch (err) {
+      setConnectError(err instanceof ApiError ? err.message : `Failed to connect ${repo.name}`)
+    } finally {
+      setConnectingId(null)
     }
-    onConnected()
   }
 
-  const filteredRepos = repos.filter((repo) =>
-    `${repo.owner.login}/${repo.name}`.toLowerCase().includes(search.toLowerCase()),
-  )
-
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          color: 'black',
-          padding: '1.5rem',
-          borderRadius: '8px',
-          width: '28rem',
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>Connect a repository</h2>
-          <button onClick={onClose}>Close</button>
-        </div>
-        <input
+    <Modal title="Connect a repository" onClose={onClose}>
+      <div className={s.search}>
+        <span className={s.searchIcon}>
+          <SearchIcon size={14} />
+        </span>
+        <Input
+          className={s.searchInput}
           type="text"
-          placeholder="Search repositories..."
+          placeholder="Search repositories"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ margin: '1rem 0', padding: '0.5rem' }}
+          onChange={(event) => setSearch(event.target.value)}
+          autoFocus
         />
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        {loading ? (
-          <p>Loading repositories...</p>
-        ) : (
-          <ul style={{ overflowY: 'auto', listStyle: 'none', padding: 0, margin: 0 }}>
-            {filteredRepos.map((repo) => {
-              const connected = isConnected(repo)
-              return (
-                <li
-                  key={repo.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.5rem 0',
-                  }}
-                >
-                  <span>
-                    {repo.owner.login}/{repo.name}
-                  </span>
-                  <button
-                    disabled={connected || connectingId === repo.id}
-                    onClick={() => handleConnect(repo)}
-                  >
-                    {connected ? 'Connected' : connectingId === repo.id ? 'Connecting...' : 'Connect'}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
       </div>
-    </div>
+
+      {(loadError || connectError) && <ErrorBanner message={loadError ?? connectError ?? ''} />}
+
+      {loading && (
+        <div className={s.skeletons}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={34} />
+          ))}
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && (
+        <p className={s.status}>{search ? `No repositories match “${search}”.` : 'No repositories found.'}</p>
+      )}
+
+      <div className={s.list}>
+        {filtered.map((repo) => {
+          const connected = connectedKeys.has(`${repo.owner.login}/${repo.name}`)
+          const connecting = connectingId === repo.id
+          return (
+            <div key={repo.id} className={s.row}>
+              <span className={s.repo}>
+                <span className={s.owner}>{repo.owner.login}/</span>
+                <span className={s.name}>{repo.name}</span>
+              </span>
+              {connected ? (
+                <span className={s.connected}>
+                  <CheckIcon size={13} />
+                  Connected
+                </span>
+              ) : (
+                <Button size="sm" disabled={connecting} onClick={() => handleConnect(repo)}>
+                  {connecting && <Spinner />}
+                  {connecting ? 'Connecting' : 'Connect'}
+                </Button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Modal>
   )
 }
 
