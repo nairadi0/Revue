@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     github_redirect_uri: str
     session_secret: str
     gemini_api_key: str
+    environment: str = "development"
+    frontend_url: str = "http://localhost:5173"
 
 
 settings = Settings()
+

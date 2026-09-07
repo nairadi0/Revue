@@ -28,7 +28,11 @@ async def login():
                   }
   auth_url = httpx.URL(base_url, params=query_params)
   response = responses.RedirectResponse(str(auth_url))
-  response.set_cookie("state", state, httponly=True)
+  if settings.environment == "production":
+    response.set_cookie("state", state, httponly=True, samesite="none", secure=True)
+  else:
+    response.set_cookie("state", state, httponly=True)
+
 
   return response
 
@@ -73,9 +77,12 @@ async def callback(code: str, state: str, request: Request):
     claims = {"sub" : str(user.id),
               "exp" : datetime.now() + timedelta(days=7)}
     jwt_token = jwt.encode(claims, settings.session_secret, "HS256")
-    dash_url = "http://localhost:5173/dashboard"
+    dash_url = f"{settings.frontend_url}/dashboard"
     response = responses.RedirectResponse(str(dash_url))
-    response.set_cookie("jwt", jwt_token, httponly=True)
+    if settings.environment == "production":
+        response.set_cookie("jwt", jwt_token, httponly=True, samesite="none", secure=True)
+    else:
+        response.set_cookie("jwt", jwt_token, httponly=True)
     return response
 
   
