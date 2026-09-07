@@ -216,6 +216,9 @@ async def pr_run(run_id: int, current_user: User = Depends(get_current_user), db
     return {"status" : agent_run.status,
             "started_at" : agent_run.started_at,
             "completed_at" : agent_run.completed_at,
+            "tool_calls_log" : agent_run.tool_calls_log,
+            "pr_number" : pr.pr_number,
+            "title" : pr.title,
             }
 
 

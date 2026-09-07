@@ -39,6 +39,9 @@ function Dashboard() {
   return (
     <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
       <h1>Dashboard</h1>
+      <p>
+        <Link to="/metrics">Metrics</Link> · <Link to="/runs">Agent Runs</Link>
+      </p>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <button onClick={() => setModalOpen(true)}>+ Add Repo</button>
       <ul>
