@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     gemini_api_key: str
     environment: str = "development"
     frontend_url: str = "http://localhost:5173"
+    backend_url: str = "http://localhost:8000"
+    github_webhook_secret: str
 
 
 settings = Settings()

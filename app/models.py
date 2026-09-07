@@ -26,6 +26,7 @@ class Repository(Base):
   owner: Mapped[str]
   name: Mapped[str]
   default_branch: Mapped[str]
+  webhook_id: Mapped[int | None]
 
 
 class UserRepository(Base):

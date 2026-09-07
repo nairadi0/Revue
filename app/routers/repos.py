@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import httpx
 from ..database import get_db
 from sqlalchemy.orm import Session
+from ..config import settings
 
 
 router = APIRouter()
@@ -63,6 +64,23 @@ async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends
       )
       db.add(repo)
       db.flush()
+    if repo.webhook_id is None:
+      response = await client.post(f"{base_url}/hooks",headers=auth_header, json={
+                                                   "name": "web",
+                                                   "active": True,
+                                                   "events": ["pull_request"],
+                                                   "config": {
+                                                              "url": f"{settings.backend_url}/webhooks/github",
+                                                              "content_type": "json",
+                                                              "secret": settings.github_webhook_secret,
+                                                              },
+                                                  }
+                        )
+      if response.status_code == 201: 
+        repo.webhook_id = response.json()["id"] 
+      else: 
+        print(response.status_code, response.text)
+      
     user_repo = db.query(UserRepository).filter(UserRepository.repo_id == repo.id, UserRepository.user_id == current_user.id).first()
 
     if not user_repo:
