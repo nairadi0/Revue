@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hmac, hashlib
 import httpx
 from ..config import settings
@@ -94,7 +94,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks, db
 
   runs = db.query(AgentRun).filter(
     AgentRun.triggered_by_user_id == user.id,
-    AgentRun.started_at >= (datetime.now() - timedelta(hours=24)),
+    AgentRun.started_at >= (datetime.now(timezone.utc) - timedelta(hours=24)),
   )
   if runs.count() >= 5:
     return {"status": "rate_limited"}
@@ -102,7 +102,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks, db
   agent_run = AgentRun(
     pr_id=pr.id,
     status=AgentStatus.PENDING,
-    started_at=datetime.now(),
+    started_at=datetime.now(timezone.utc),
     triggered_by_user_id=user.id,
   )
   db.add(agent_run)

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, responses, Request, HTTPException, Depends
 import httpx, secrets
 from ..config import settings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ..database import SessionLocal, get_db
 from ..models import User
 from jose import jwt, JWTError
@@ -52,7 +52,7 @@ async def callback(code: str, state: str, request: Request):
                                                  "redirect_uri" : redirect_uri
                                                 }, headers={"Accept" : "application/json"})
     token_data = response.json()
-    token_expires_at = timedelta(seconds=int(token_data["expires_in"])) + datetime.now()
+    token_expires_at = timedelta(seconds=int(token_data["expires_in"])) + datetime.now(timezone.utc)
     auth_header = {"Authorization" : f"Bearer {token_data['access_token']}"}
     gh_identity = await client.get("https://api.github.com/user", headers=auth_header)
     gh_identity_data = gh_identity.json()
@@ -75,7 +75,7 @@ async def callback(code: str, state: str, request: Request):
       db.add(user)
     db.commit()
     claims = {"sub" : str(user.id),
-              "exp" : datetime.now() + timedelta(days=7)}
+              "exp" : datetime.now(timezone.utc) + timedelta(days=7)}
     jwt_token = jwt.encode(claims, settings.session_secret, "HS256")
     dash_url = f"{settings.frontend_url}/dashboard"
     response = responses.RedirectResponse(str(dash_url))
@@ -100,8 +100,15 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
   return user
 
 
+@router.get("/user/me")
+def get_me(current_user: User = Depends(get_current_user)):
+  return {"username" : current_user.username,
+          "avatar_url" : f"https://avatars.githubusercontent.com/u/{current_user.github_id}?v=4",
+          }
+
+
 async def get_valid_access_token(user: User, db) -> str:
-  if datetime.now() > user.token_expires_at:
+  if datetime.now(timezone.utc) > user.token_expires_at:
     async with httpx.AsyncClient() as client:
       base_url = "https://github.com/login/oauth/access_token"
       response = await client.post(base_url, data={"grant_type" : "refresh_token",
@@ -111,7 +118,7 @@ async def get_valid_access_token(user: User, db) -> str:
       new_token = response.json()
       user.access_token = new_token['access_token']
       user.refresh_token = new_token['refresh_token']
-      user.token_expires_at = timedelta(seconds=int(new_token['expires_in'])) + datetime.now()
+      user.token_expires_at = timedelta(seconds=int(new_token['expires_in'])) + datetime.now(timezone.utc)
       db.commit()
       return user.access_token
 

@@ -9,8 +9,14 @@ const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 
 const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
+const HAS_TIMEZONE = /(?:Z|[+-]\d{2}:?\d{2})$/
+
+export function parseUtc(iso: string): Date {
+  return new Date(HAS_TIMEZONE.test(iso) ? iso : `${iso}Z`)
+}
+
 export function formatRelative(iso: string): string {
-  const elapsed = (Date.now() - new Date(iso).getTime()) / 1000
+  const elapsed = (Date.now() - parseUtc(iso).getTime()) / 1000
   for (const [unit, seconds] of RELATIVE_UNITS) {
     if (Math.abs(elapsed) >= seconds) {
       return relativeFormatter.format(-Math.round(elapsed / seconds), unit)
@@ -20,12 +26,12 @@ export function formatRelative(iso: string): string {
 }
 
 export function formatDateTime(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+  return iso ? parseUtc(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 }
 
 export function formatDuration(startedAt: string, completedAt: string | null): string {
   if (!completedAt) return '—'
-  return formatElapsed((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)
+  return formatElapsed((parseUtc(completedAt).getTime() - parseUtc(startedAt).getTime()) / 1000)
 }
 
 export function formatElapsed(seconds: number): string {

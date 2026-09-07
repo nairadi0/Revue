@@ -12,9 +12,9 @@ class User(Base):
   github_id: Mapped[int] = mapped_column(unique=True)
   username: Mapped[str] = mapped_column(String(50), unique=True)
   access_token: Mapped[str] = mapped_column(String(255))
-  token_expires_at: Mapped[datetime]
+  token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
   refresh_token: Mapped[str] = mapped_column(String(255))
-  created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 
@@ -34,7 +34,7 @@ class UserRepository(Base):
   id: Mapped[int] =  mapped_column(primary_key=True)
   user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
   repo_id: Mapped[int] =  mapped_column(ForeignKey("repositories.id"))
-  connected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+  connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
   __table_args__ = (
     UniqueConstraint("user_id", "repo_id", name="uq_user_repo"),
   )
@@ -76,7 +76,7 @@ class PullRequest(Base):
   title: Mapped[str]
   author: Mapped[str]
   status: Mapped[Status] = mapped_column(Enum(Status))
-  opened_at: Mapped[datetime] 
+  opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
   __table_args__ = (
     UniqueConstraint("repo_id", "pr_number", name="uq_repo_pr_number"), 
   )
@@ -104,7 +104,7 @@ class ReviewFinding(Base):
   category: Mapped[Category] = mapped_column(Enum(Category))
   finding_text: Mapped[str]
   suggestion: Mapped[str]
-  created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class RepoMemory(Base):
   __tablename__ = "repo_memory"
@@ -113,7 +113,7 @@ class RepoMemory(Base):
   repo_id: Mapped[int] = mapped_column(ForeignKey("repositories.id"))
   file_path: Mapped[str]
   pattern_summary: Mapped[str]
-  last_updated: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+  last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class AgentRun(Base):
   __tablename__ = "agent_runs"
@@ -121,7 +121,7 @@ class AgentRun(Base):
   id: Mapped[int] = mapped_column(primary_key=True)
   pr_id: Mapped[int] = mapped_column(ForeignKey("pull_requests.id"))
   status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus))
-  started_at: Mapped[datetime]
-  completed_at: Mapped[datetime | None]
+  started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+  completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   tool_calls_log: Mapped[list] = mapped_column(JSON, default=list)
   triggered_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
 from .auth import get_current_user, get_valid_access_token
@@ -128,7 +128,7 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_use
       user = db.query(User).filter(User.id == current_user_id).first()
       if repo is None or pr is None or user is None:
           agent_run.status = AgentStatus.FAILED
-          agent_run.completed_at = datetime.now()
+          agent_run.completed_at = datetime.now(timezone.utc)
           agent_run.tool_calls_log = [{"error": "repo, pull request, or user no longer exists"}]
           db.commit()
           return
@@ -143,12 +143,12 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_use
             run_log.extend(await agent_review(pr_file, repo, user, db))
             file_count += 1
          agent_run.status = AgentStatus.SUCCESS
-         agent_run.completed_at = datetime.now()
+         agent_run.completed_at = datetime.now(timezone.utc)
          agent_run.tool_calls_log = run_log
          db.commit()
       except Exception as e:
           agent_run.status = AgentStatus.FAILED
-          agent_run.completed_at = datetime.now()
+          agent_run.completed_at = datetime.now(timezone.utc)
           run_log.append({"error" : str(e)})
           agent_run.tool_calls_log = run_log
           db.commit()
@@ -162,12 +162,12 @@ async def trigger_review(repo_id: int, pr_number: int, background_tasks: Backgro
     if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
     pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
     if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
-    runs = db.query(AgentRun).filter(AgentRun.triggered_by_user_id == current_user.id, AgentRun.started_at >= (datetime.now() - timedelta(hours=24)))
+    runs = db.query(AgentRun).filter(AgentRun.triggered_by_user_id == current_user.id, AgentRun.started_at >= (datetime.now(timezone.utc) - timedelta(hours=24)))
     if runs.count() >= 5: raise HTTPException(status_code=429, detail="You have reached the daily limit for Pull Request reviews")
     agent_run = AgentRun(
         pr_id = pr.id,
         status = AgentStatus.PENDING,
-        started_at = datetime.now(),
+        started_at = datetime.now(timezone.utc),
         triggered_by_user_id = current_user.id
     )
     db.add(agent_run)

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { API_BASE, ApiError, apiPost, extractErrorMessage } from '../api'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useRepo } from '../hooks/useRepo'
-import { formatElapsed, splitPath } from '../lib/format'
+import { formatElapsed, parseUtc, splitPath } from '../lib/format'
 import { SEVERITY_COLOR, SEVERITY_ORDER } from '../lib/severity'
 import AppLayout from '../components/AppLayout'
 import {
@@ -94,7 +94,7 @@ function PrDetail() {
 
   useEffect(() => {
     if (!isReviewInProgress || !run) return
-    const startedAt = new Date(run.started_at).getTime()
+    const startedAt = parseUtc(run.started_at).getTime()
     const tick = () => setElapsed((Date.now() - startedAt) / 1000)
     tick()
     const handle = setInterval(tick, 1000)
