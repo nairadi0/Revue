@@ -15,6 +15,10 @@ the GitHub Release, and the Elastic Beanstalk version label share the same name.
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-09-15
+
+Findings are posted back to the pull request on GitHub as `revue[bot]` review comments.
+
 ### Added
 - **Findings are posted to GitHub.** After a successful run, Revue publishes its
   findings as a single pull request review authored by `revue[bot]`
@@ -148,7 +152,8 @@ First production deployment. Everything in the original specification is shipped
 - Deployment: Docker on Elastic Beanstalk behind CloudFront, RDS PostgreSQL,
   React SPA on S3 + CloudFront.
 
-[Unreleased]: https://github.com/nairadi0/Revue/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/nairadi0/Revue/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/nairadi0/Revue/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/nairadi0/Revue/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/nairadi0/Revue/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/nairadi0/Revue/releases/tag/v1.0.0
