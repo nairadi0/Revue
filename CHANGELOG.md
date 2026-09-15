@@ -15,9 +15,31 @@ the GitHub Release, and the Elastic Beanstalk version label share the same name.
 
 ## [Unreleased]
 
-### Planned
-- Post findings to the pull request on GitHub as `revue[bot]` review comments.
-- Drop the unused `repositories.webhook_id` column.
+### Added
+- **Findings are posted to GitHub.** After a successful run, Revue publishes its
+  findings as a single pull request review authored by `revue[bot]`
+  (`event: COMMENT`), with one inline comment per finding whose line is part of the
+  PR diff and the rest listed in the review body. Runs with no findings post
+  nothing. The review body links back to the run in Revue.
+- Per-repository **Post reviews to GitHub** toggle (off by default) on the pull
+  request list, backed by `repositories.post_reviews` and
+  `PATCH /repos/{id}/settings`.
+- `agent_runs.github_review_id` records the posted review; a second post for the
+  same run is a no-op. `GET /agent_runs/{id}` and the new
+  `GET /repos/{id}/prs/{n}/latest-review` return the review URL, shown as
+  "View on GitHub" on the run and PR detail pages.
+- `review_findings.agent_run_id` links each finding to the run that produced it.
+  The PR detail page now shows the latest successful run's findings instead of
+  every finding ever recorded for the PR.
+- The `post_review` step appears in the run trace, including a skipped reason or
+  the GitHub error when posting did not happen.
+
+### Changed
+- The GitHub App now requires **Pull requests: read & write** (was read). Existing
+  installations must accept the new permission before the bot can post.
+
+### Removed
+- The unused `repositories.webhook_id` column (dead since 2.0.0).
 
 ## [2.0.0] — 2026-09-14
 

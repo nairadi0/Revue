@@ -54,3 +54,11 @@ export function apiPost<T>(path: string, body?: unknown, fallback = 'Request fai
     fallback,
   )
 }
+
+export function apiPatch<T>(path: string, body: unknown, fallback = 'Request failed'): Promise<T> {
+  return apiFetch<T>(
+    path,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    fallback,
+  )
+}

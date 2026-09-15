@@ -144,7 +144,7 @@ async def run_tool(function_name: str, pr_file: PRFile, repo: Repository, db: Se
   return f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns, get_repo_memory."
 
 
-async def agent_review(pr_file: PRFile, repo: Repository, db: Session):
+async def agent_review(pr_file: PRFile, repo: Repository, db: Session, agent_run_id: int | None = None):
   file_path = pr_file.file_path
   initial_prompt = textwrap.dedent(f"""
   You are an expert code reviewer tasked with finding bugs and security issues for a given pull request file. 
@@ -210,6 +210,7 @@ async def agent_review(pr_file: PRFile, repo: Repository, db: Session):
     finding = ReviewFinding(
       pr_id = pr_id,
       file_id = file_id,
+      agent_run_id = agent_run_id,
       line_number = line_number,
       severity = severity,
       category = category,

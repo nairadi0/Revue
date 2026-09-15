@@ -134,6 +134,27 @@ A review starts one of two ways:
 Manual runs are rate-limited per user, webhook runs per repository — five per 24
 hours in each case, enforced by counting `agent_runs` rows.
 
+### Posting back to GitHub
+
+When a repository has **Post reviews to GitHub** switched on (a per-repo toggle on
+its pull request list, off by default), every successful run ends by publishing its
+findings as a single pull request review authored by `revue[bot]`:
+`POST /repos/{owner}/{repo}/pulls/{n}/reviews` with `event: COMMENT`, so the bot
+never blocks a merge on a model's judgement.
+
+Each finding becomes an inline comment on its line when that line is part of the
+PR diff. GitHub rejects the *whole* review if any comment targets a line outside a
+hunk, and the agent's `line_number` is model-produced, so `diff_lines()` parses the
+file's `@@ -a,b +c,d @@` headers into the set of RIGHT-side lines and anything that
+doesn't anchor is listed in the review body under *Outside the diff* instead of
+being dropped. The body opens with a severity breakdown and links back to the run in
+Revue. Runs with no findings post nothing.
+
+Posting is best-effort: a GitHub error is recorded as a `post_review` step in the
+run's trace and the run stays `SUCCESS`. The returned review id is stored on
+`agent_runs.github_review_id`, which makes a retry a no-op and gives the UI a
+"View on GitHub" link.
+
 ### Auth and GitHub access
 
 Revue is a **GitHub App**, and keeps three credentials deliberately separate:
@@ -146,8 +167,9 @@ Revue is a **GitHub App**, and keeps three credentials deliberately separate:
   with the App's private key and exchanging it at
   `POST /app/installations/{id}/access_tokens`. These act as `revue[bot]`, are
   scoped to exactly the permissions the App declares — *Contents: read*, *Pull
-  requests: read*, *Metadata: read* — and are what every repository read actually
-  uses. They live an hour and are cached per installation.
+  requests: read & write*, *Metadata: read* — and are what every repository read
+  and every posted review actually uses. They live an hour and are cached per
+  installation.
 
 `repositories.installation_id` records which installation covers each repo, kept in
 sync by the App's `installation` and `installation_repositories` webhook events.
@@ -172,6 +194,7 @@ erDiagram
     pull_requests ||--o{ pr_files : contains
     pull_requests ||--o{ agent_runs : "reviewed by"
     pr_files ||--o{ review_findings : flagged_in
+    agent_runs ||--o{ review_findings : produces
     users ||--o{ agent_runs : triggers
 ```
 
@@ -184,6 +207,11 @@ many-to-many model fixes that.
 
 `repo_memory` is keyed on `(repo_id, file_path)` and holds one evolving
 `pattern_summary` per file — the agent's long-term memory.
+
+`review_findings.agent_run_id` ties each finding to the run that produced it. The
+PR detail page shows the latest successful run's findings; earlier runs remain
+reachable from the run history, and re-reviewing a PR no longer piles duplicates
+onto the page.
 
 ---
 
@@ -241,8 +269,8 @@ GEMINI_API_KEY=...
 ```
 
 The GitHub values come from a **GitHub App** (Settings → Developer settings →
-GitHub Apps) with repository permissions *Contents: read* and *Pull requests: read*,
-subscribed to the *Pull request* event, with *Expire user authorization tokens*
+GitHub Apps) with repository permissions *Contents: read* and *Pull requests: read &
+write* (write is what lets the bot post reviews), subscribed to the *Pull request* event, with *Expire user authorization tokens*
 enabled and a callback URL matching `GITHUB_REDIRECT_URI`. The private key is stored
 base64-encoded so the same value works in `.env` and in single-line environment
 stores like Elastic Beanstalk. For local webhook delivery, point the App's webhook
@@ -335,9 +363,10 @@ was a classic OAuth App with the `repo` scope, which grants write access to code
 issues, wikis, and settings on every repository the user can touch — far more than
 a reviewer needs — and its webhook handler had to borrow a token from a Revue user
 matching the PR author, so a collaborator's PR was silently ignored. Moving to a
-GitHub App made the permission grant *Contents: read* + *Pull requests: read*, made
-webhooks app-level instead of per-repository, and let the agent act as `revue[bot]`
-regardless of who opened the PR. The user's OAuth token is now identity-only.
+GitHub App made the permission grant *Contents: read* + *Pull requests: read & write*,
+made webhooks app-level instead of per-repository, and let the agent act as
+`revue[bot]` regardless of who opened the PR — both when reading and when posting the
+review. The user's OAuth token is now identity-only.
 
 **Answer every tool call in the turn.** Gemini will request several tools in a
 single response — in practice it asks for the diff, the history, the security scan,
@@ -359,8 +388,10 @@ rather than being repeated per page.
 
 Honest list of what this does not do yet:
 
-- **Findings are not posted back to GitHub.** Reviews live in the Revue UI. Writing
-  them as PR review comments is the obvious next step.
+- **Posting to GitHub is one review per run, comment-only.** The bot never requests
+  changes, never updates or resolves an earlier review when a PR is re-reviewed, and
+  findings whose line falls outside the diff land in the review body rather than
+  inline.
 - **No background worker.** Reviews run in-process; a deploy during a review loses
   that run.
 - **The security tool is regex heuristics**, not real static analysis. It exists to

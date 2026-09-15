@@ -101,8 +101,21 @@ def get_connected_repos(current_user: User = Depends(get_current_user), db: Sess
                   "name" : name,
                   "owner" : owner,
                   "connected_at" : connected_at,
+                  "post_reviews" : repo.post_reviews,
                   })
 
   return repos
-                 
-    
+
+
+class RepoSettings(BaseModel):
+  post_reviews: bool
+
+
+@router.patch("/repos/{repo_id}/settings")
+def update_repo_settings(repo_id: int, payload: RepoSettings, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+  repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
+  if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+  repo = db.query(Repository).filter(Repository.id == repo_id).first()
+  repo.post_reviews = payload.post_reviews
+  db.commit()
+  return {"id": repo.id, "post_reviews": repo.post_reviews}

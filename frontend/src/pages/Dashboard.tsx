@@ -13,6 +13,7 @@ export interface ConnectedRepo {
   name: string
   owner: string
   connected_at: string
+  post_reviews: boolean
 }
 
 function Dashboard() {

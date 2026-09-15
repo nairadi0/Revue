@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, DateTime, func, ForeignKey, Enum, UniqueConstraint, JSON
+from sqlalchemy import String, DateTime, func, ForeignKey, Enum, UniqueConstraint, JSON, BigInteger
 from .database import Base
 from datetime import datetime
 from enum import Enum as PyEnum
@@ -26,8 +26,8 @@ class Repository(Base):
   owner: Mapped[str]
   name: Mapped[str]
   default_branch: Mapped[str]
-  webhook_id: Mapped[int | None]
   installation_id: Mapped[int | None]
+  post_reviews: Mapped[bool] = mapped_column(default=False, server_default="false")
 
 
 class UserRepository(Base):
@@ -100,6 +100,7 @@ class ReviewFinding(Base):
   id: Mapped[int] = mapped_column(primary_key=True)
   pr_id: Mapped[int] = mapped_column(ForeignKey("pull_requests.id"))
   file_id: Mapped[int] = mapped_column(ForeignKey("pr_files.id"))
+  agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id"))
   line_number: Mapped[int]
   severity: Mapped[Severity] = mapped_column(Enum(Severity))
   category: Mapped[Category] = mapped_column(Enum(Category))
@@ -126,3 +127,4 @@ class AgentRun(Base):
   completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   tool_calls_log: Mapped[list] = mapped_column(JSON, default=list)
   triggered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+  github_review_id: Mapped[int | None] = mapped_column(BigInteger)

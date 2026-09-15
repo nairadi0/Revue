@@ -14,12 +14,13 @@ import {
   EmptyState,
   ErrorBanner,
   InstallPrompt,
+  LinkButton,
   PageHeader,
   SeverityBadge,
   Skeleton,
   Spinner,
 } from '../components/ui'
-import { FileIcon, SparkIcon } from '../components/icons'
+import { FileIcon, GitHubIcon, SparkIcon } from '../components/icons'
 import s from './PrDetail.module.css'
 
 interface PRFile {
@@ -56,6 +57,11 @@ interface AgentRun {
   completed_at: string | null
 }
 
+interface LatestReview {
+  run_id: number | null
+  github_review_url: string | null
+}
+
 const POLL_INTERVAL_MS = 3000
 const MAX_POLL_ATTEMPTS = 100
 
@@ -75,6 +81,10 @@ function PrDetail() {
   const { data: findings, refetch: refetchFindings } = useApiQuery<Finding[]>(
     `/repos/${repoId}/prs/${prNumber}/findings`,
     'Failed to load findings',
+  )
+  const { data: latestReview, refetch: refetchLatestReview } = useApiQuery<LatestReview>(
+    `/repos/${repoId}/prs/${prNumber}/latest-review`,
+    'Failed to load review status',
   )
 
   const [run, setRun] = useState<AgentRun | null>(null)
@@ -132,6 +142,7 @@ function PrDetail() {
         stopPolling()
         if (data.status === 'SUCCESS') {
           refetchFindings()
+          refetchLatestReview()
         }
       }
     }, POLL_INTERVAL_MS)
@@ -238,6 +249,18 @@ function PrDetail() {
                   {count} {severity.toLowerCase()}
                 </Badge>
               ))}
+              {latestReview?.github_review_url && (
+                <LinkButton
+                  size="sm"
+                  href={latestReview.github_review_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={s.githubLink}
+                >
+                  <GitHubIcon size={13} />
+                  View on GitHub
+                </LinkButton>
+              )}
             </div>
           )}
 

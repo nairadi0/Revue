@@ -3,8 +3,8 @@ import { useParams } from 'react-router'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { formatDateTime, formatDuration } from '../lib/format'
 import AppLayout from '../components/AppLayout'
-import { Card, Chip, EmptyState, ErrorBanner, PageHeader, Skeleton, StatusBadge } from '../components/ui'
-import { FileIcon } from '../components/icons'
+import { Card, Chip, EmptyState, ErrorBanner, LinkButton, PageHeader, Skeleton, StatusBadge } from '../components/ui'
+import { FileIcon, GitHubIcon } from '../components/icons'
 import s from './AgentRunDetail.module.css'
 
 interface ToolCallLogEntry {
@@ -15,6 +15,9 @@ interface ToolCallLogEntry {
   step?: string
   retries?: number
   error?: string
+  skipped?: string
+  review_id?: number
+  comments?: number
 }
 
 interface AgentRunDetailData {
@@ -24,9 +27,14 @@ interface AgentRunDetailData {
   pr_number: number
   title: string
   tool_calls_log: ToolCallLogEntry[]
+  owner: string
+  name: string
+  github_review_id: number | null
+  github_review_url: string | null
 }
 
 const ERROR_GROUP = 'Run errors'
+const POST_GROUP = 'GitHub review'
 
 function AgentRunDetail() {
   const { runId } = useParams()
@@ -38,7 +46,7 @@ function AgentRunDetail() {
   const groups = useMemo(() => {
     const byFile = new Map<string, ToolCallLogEntry[]>()
     for (const entry of run?.tool_calls_log ?? []) {
-      const key = entry.file ?? ERROR_GROUP
+      const key = entry.file ?? (entry.step === 'post_review' ? POST_GROUP : ERROR_GROUP)
       const existing = byFile.get(key)
       if (existing) {
         existing.push(entry)
@@ -58,6 +66,14 @@ function AgentRunDetail() {
         title={run?.title ?? `Agent run ${runId}`}
         badge={run && <StatusBadge status={run.status} />}
         subtitle={run ? `Pull request #${run.pr_number}` : undefined}
+        actions={
+          run?.github_review_url && (
+            <LinkButton href={run.github_review_url} target="_blank" rel="noreferrer">
+              <GitHubIcon size={14} />
+              View review on GitHub
+            </LinkButton>
+          )
+        }
       />
 
       {error && <ErrorBanner message={error} />}
@@ -119,15 +135,21 @@ function AgentRunDetail() {
                           {entry.error ? 'Error' : (entry.step ?? `Iteration ${entry.iteration ?? i + 1}`)}
                         </span>
                         {entry.tool && <Chip>{entry.tool}</Chip>}
+                        {entry.review_id && !entry.skipped ? (
+                          <Chip>
+                            posted {entry.comments ?? 0} inline {entry.comments === 1 ? 'comment' : 'comments'}
+                          </Chip>
+                        ) : null}
+                        {entry.skipped && <Chip>skipped</Chip>}
                         {entry.retries ? (
                           <span className={s.retries}>
                             {entry.retries} {entry.retries === 1 ? 'retry' : 'retries'}
                           </span>
                         ) : null}
                       </div>
-                      {(entry.result_preview || entry.error) && (
+                      {(entry.result_preview || entry.error || entry.skipped) && (
                         <div className={[s.preview, entry.error ? s.errorText : ''].filter(Boolean).join(' ')}>
-                          {entry.error ?? entry.result_preview}
+                          {entry.error ?? entry.skipped ?? entry.result_preview}
                         </div>
                       )}
                     </div>

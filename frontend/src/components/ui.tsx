@@ -190,6 +190,40 @@ export function Skeleton({ height = 16, width = '100%', radius }: { height?: num
   return <div className={s.skeleton} style={{ height, width, borderRadius: radius }} />
 }
 
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled = false,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  label: string
+  hint?: string
+  disabled?: boolean
+}) {
+  return (
+    <label className={[s.toggle, disabled ? s.toggleDisabled : ''].filter(Boolean).join(' ')}>
+      <span className={s.toggleText}>
+        <span className={s.toggleLabel}>{label}</span>
+        {hint && <span className={s.toggleHint}>{hint}</span>}
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        className={s.toggleInput}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className={s.toggleTrack} aria-hidden="true">
+        <span className={s.toggleThumb} />
+      </span>
+    </label>
+  )
+}
+
 export function Spinner() {
   return <span className={s.spinner} aria-hidden="true" />
 }

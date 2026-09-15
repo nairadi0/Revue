@@ -7,6 +7,7 @@ from .auth import get_current_user
 from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile, ReviewFinding, AgentRun, AgentStatus
 from ..services.agent import agent_review
 from ..services.github_app import repo_headers
+from ..services.github_reviews import build_review, post_review, review_url
 
 router = APIRouter()
 
@@ -132,15 +133,13 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int):
           db.commit()
           return
 
-      pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id)
+      pr_files = db.query(PRFile).filter(PRFile.pr_id == pr.id).all()
       run_log = []
       agent_run.status = AgentStatus.RUNNING
       db.commit()
       try:
-         file_count = 0
          for pr_file in pr_files:
-            run_log.extend(await agent_review(pr_file, repo, db))
-            file_count += 1
+            run_log.extend(await agent_review(pr_file, repo, db, agent_run.id))
          agent_run.status = AgentStatus.SUCCESS
          agent_run.completed_at = datetime.now(timezone.utc)
          agent_run.tool_calls_log = run_log
@@ -151,9 +150,32 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int):
           run_log.append({"error" : str(e)})
           agent_run.tool_calls_log = run_log
           db.commit()
-          
+          return
+
+      run_log.append(await publish_review(agent_run, repo, pr, pr_files, db))
+      agent_run.tool_calls_log = list(run_log)
+      db.commit()
+
     finally:
       db.close()
+
+
+async def publish_review(agent_run: AgentRun, repo: Repository, pr: PullRequest, pr_files: list[PRFile], db: Session) -> dict:
+    entry = {"step": "post_review"}
+    if not repo.post_reviews:
+        return {**entry, "skipped": "posting to GitHub is off for this repository"}
+    if agent_run.github_review_id is not None:
+        return {**entry, "skipped": "already posted", "review_id": agent_run.github_review_id}
+    findings = db.query(ReviewFinding).filter(ReviewFinding.agent_run_id == agent_run.id).all()
+    payload = build_review(agent_run, findings, pr_files)
+    if payload is None:
+        return {**entry, "skipped": "no findings"}
+    try:
+        review_id = await post_review(repo, pr, payload)
+    except Exception as e:
+        return {**entry, "error": str(e)}
+    agent_run.github_review_id = review_id
+    return {**entry, "review_id": review_id, "comments": len(payload["comments"])}
 
 @router.post("/repos/{repo_id}/prs/{pr_number}/review")
 async def trigger_review(repo_id: int, pr_number: int, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -177,13 +199,31 @@ async def trigger_review(repo_id: int, pr_number: int, background_tasks: Backgro
             }
 
 
+def latest_successful_run(db: Session, pr: PullRequest) -> AgentRun | None:
+   return (
+      db.query(AgentRun)
+      .filter(AgentRun.pr_id == pr.id, AgentRun.status == AgentStatus.SUCCESS)
+      .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
+      .first()
+   )
+
+
+def latest_run_findings(db: Session, pr: PullRequest) -> list[ReviewFinding]:
+   run = latest_successful_run(db, pr)
+   if run is not None:
+      findings = db.query(ReviewFinding).filter(ReviewFinding.agent_run_id == run.id).all()
+      if findings:
+         return findings
+   return db.query(ReviewFinding).filter(ReviewFinding.pr_id == pr.id, ReviewFinding.agent_run_id.is_(None)).all()
+
+
 @router.get("/repos/{repo_id}/prs/{pr_number}/findings")
 async def view_findings(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
    if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
-   review_findings = db.query(ReviewFinding).filter(ReviewFinding.pr_id == pr.id)
+   review_findings = latest_run_findings(db, pr)
    findings = []
    for finding in review_findings:
        finding_id = finding.id
@@ -204,13 +244,28 @@ async def view_findings(repo_id: int, pr_number: int, current_user: User = Depen
    return findings
 
 
+@router.get("/repos/{repo_id}/prs/{pr_number}/latest-review")
+async def latest_review(repo_id: int, pr_number: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+   repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
+   if repo_access is None: raise HTTPException(status_code=403, detail="You do not have access to this repository")
+   repo = db.query(Repository).filter(Repository.id == repo_id).first()
+   pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
+   if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
+   run = latest_successful_run(db, pr)
+   return {
+      "run_id": run.id if run else None,
+      "github_review_url": review_url(repo, pr, run.github_review_id) if run and run.github_review_id else None,
+   }
+
+
 @router.get("/agent_runs/{run_id}")
 async def pr_run(run_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     agent_run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
     if agent_run is None: raise HTTPException(status_code=404, detail="Pull request review not found")
     pr = db.query(PullRequest).filter(PullRequest.id == agent_run.pr_id).first()
-    repo = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == pr.repo_id).first()
-    if repo is None: raise HTTPException(status_code=403, detail="No permission to view this repository")
+    repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == pr.repo_id).first()
+    if repo_access is None: raise HTTPException(status_code=403, detail="No permission to view this repository")
+    repo = db.query(Repository).filter(Repository.id == pr.repo_id).first()
 
     return {"status" : agent_run.status,
             "started_at" : agent_run.started_at,
@@ -218,6 +273,11 @@ async def pr_run(run_id: int, current_user: User = Depends(get_current_user), db
             "tool_calls_log" : agent_run.tool_calls_log,
             "pr_number" : pr.pr_number,
             "title" : pr.title,
+            "repo_id" : repo.id,
+            "owner" : repo.owner,
+            "name" : repo.name,
+            "github_review_id" : agent_run.github_review_id,
+            "github_review_url" : review_url(repo, pr, agent_run.github_review_id) if agent_run.github_review_id else None,
             }
 
 
