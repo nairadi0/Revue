@@ -3,11 +3,13 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
-from .auth import get_current_user, get_valid_access_token
+from .auth import get_current_user
 from ..models import User, Repository, UserRepository, PullRequest, Status, PRFile, ReviewFinding, AgentRun, AgentStatus
 from ..services.agent import agent_review
+from ..services.github_app import repo_headers
 
 router = APIRouter()
+
 
 
 @router.get("/repos/{repo_id}/prs")
@@ -15,12 +17,11 @@ async def get_prs(repo_id: int, current_user: User = Depends(get_current_user), 
   repo_access = db.query(UserRepository).filter(UserRepository.user_id == current_user.id, UserRepository.repo_id == repo_id).first()
   if not repo_access: raise HTTPException(status_code=403, detail="You do not have access to this repository")
   repo = db.query(Repository).filter(Repository.id == repo_id).first()
-  await get_valid_access_token(current_user, db)
   owner = repo.owner
   name = repo.name
   base_url = f"https://api.github.com/repos/{owner}/{name}/pulls"
   async with httpx.AsyncClient() as client:
-    auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
+    auth_header = await repo_headers(repo)
     response = await client.get(base_url, headers=auth_header, params={"state" : "all"})
     if response.status_code != 200:
           raise HTTPException(status_code=404, detail="Repository not found or not accessible")
@@ -49,7 +50,7 @@ async def get_prs(repo_id: int, current_user: User = Depends(get_current_user), 
              title = pr_title,
              repo_id = repo_id,
              pr_number = pr_number,
-             opened_at = created_at,
+             opened_at = datetime.fromisoformat(created_at),
              status = status,
            )
           db.add(pr)
@@ -70,12 +71,11 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
    repo = db.query(Repository).filter(Repository.id == repo_id).first()
    pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
    if pr is None: raise HTTPException(status_code=404, detail="Pull Request not found")
-   await get_valid_access_token(current_user, db)
    owner = repo.owner
    name = repo.name
    base_url = f"https://api.github.com/repos/{owner}/{name}/pulls/{pr_number}/files"
    async with httpx.AsyncClient() as client:
-      auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
+      auth_header = await repo_headers(repo)
       response = await client.get(base_url, headers=auth_header)
       if response.status_code != 200:
                 raise HTTPException(status_code=404, detail="Cannot find files for this Pull Request")
@@ -116,7 +116,7 @@ async def get_pr_files(repo_id: int, pr_number: int, current_user: User = Depend
    return files
 
 
-async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_user_id: int):
+async def pr_review(agent_run_id: int, repo_id: int, pr_number: int):
     db = SessionLocal()
     try:
       agent_run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).first()
@@ -125,11 +125,10 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_use
 
       repo = db.query(Repository).filter(Repository.id == repo_id).first()
       pr = db.query(PullRequest).filter(PullRequest.repo_id == repo_id, PullRequest.pr_number == pr_number).first()
-      user = db.query(User).filter(User.id == current_user_id).first()
-      if repo is None or pr is None or user is None:
+      if repo is None or pr is None:
           agent_run.status = AgentStatus.FAILED
           agent_run.completed_at = datetime.now(timezone.utc)
-          agent_run.tool_calls_log = [{"error": "repo, pull request, or user no longer exists"}]
+          agent_run.tool_calls_log = [{"error": "repo or pull request no longer exists"}]
           db.commit()
           return
 
@@ -140,7 +139,7 @@ async def pr_review(agent_run_id: int, repo_id: int, pr_number: int, current_use
       try:
          file_count = 0
          for pr_file in pr_files:
-            run_log.extend(await agent_review(pr_file, repo, user, db))
+            run_log.extend(await agent_review(pr_file, repo, db))
             file_count += 1
          agent_run.status = AgentStatus.SUCCESS
          agent_run.completed_at = datetime.now(timezone.utc)
@@ -172,7 +171,7 @@ async def trigger_review(repo_id: int, pr_number: int, background_tasks: Backgro
     )
     db.add(agent_run)
     db.commit()
-    background_tasks.add_task(pr_review, agent_run.id, repo_id, pr_number, current_user.id)
+    background_tasks.add_task(pr_review, agent_run.id, repo_id, pr_number)
     return {"run_id" : agent_run.id,
             "status" : agent_run.status, 
             }

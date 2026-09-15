@@ -64,6 +64,26 @@
   padding-right: 0.4rem;
 }
 
+.installHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 1rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.installHint svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
 .status {
   padding: 2rem 0;
   text-align: center;

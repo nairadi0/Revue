@@ -1,9 +1,10 @@
 import httpx, re, textwrap, asyncio
-from ..models import PRFile, Repository, User, ReviewFinding, Severity, Category, RepoMemory
+from ..models import PRFile, Repository, ReviewFinding, Severity, Category, RepoMemory
 from google.genai import types
 from google.genai.errors import APIError
 from google import genai
 from ..config import settings
+from .github_app import repo_headers
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -30,14 +31,13 @@ def get_diff(pr_file: PRFile):
   return diff
 
 
-async def get_file_history(pr_file: PRFile, repo: Repository, current_user: User):
+async def get_file_history(pr_file: PRFile, repo: Repository):
   owner = repo.owner
   name = repo.name
-  access_token = current_user.access_token
   file_path = pr_file.file_path
   base_url = f"https://api.github.com/repos/{owner}/{name}/commits"
   async with httpx.AsyncClient() as client:
-    auth_header = {"Authorization" : f"Bearer {access_token}"}
+    auth_header = await repo_headers(repo)
     response = await client.get(base_url, headers=auth_header, params={"path" : file_path})
     if response.status_code != 200:
       return f"This tool call failed with status code {response.status_code}. Continue with other methods"
@@ -132,7 +132,19 @@ async def generate_with_retry(max_retries: int = 3, **kwargs):
       await asyncio.sleep(delay)
 
 
-async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db: Session):
+async def run_tool(function_name: str, pr_file: PRFile, repo: Repository, db: Session):
+  if function_name == "get_diff":
+    return get_diff(pr_file)
+  if function_name == "get_file_history":
+    return await get_file_history(pr_file, repo)
+  if function_name == "check_security_patterns":
+    return check_security_patterns(pr_file)
+  if function_name == "get_repo_memory":
+    return get_repo_memory(pr_file, repo, db)
+  return f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns, get_repo_memory."
+
+
+async def agent_review(pr_file: PRFile, repo: Repository, db: Session):
   file_path = pr_file.file_path
   initial_prompt = textwrap.dedent(f"""
   You are an expert code reviewer tasked with finding bugs and security issues for a given pull request file. 
@@ -153,34 +165,22 @@ async def agent_review(pr_file: PRFile, repo: Repository, current_user: User, db
                                           config=types.GenerateContentConfig(tools=[tools]),
                                           )
     
-    print(f"candidates: {response.candidates}, prompt_feedback: {getattr(response, 'prompt_feedback', None)}")
     contents.append(response.candidates[0].content)
-    part = response.candidates[0].content.parts[0]
-    if part.function_call:
-      function_name = part.function_call.name
+    function_calls = [part.function_call for part in response.candidates[0].content.parts if part.function_call]
+    if not function_calls:
+      break
 
-      if function_name == "get_diff":
-        tool_result = get_diff(pr_file)
-      elif function_name == "get_file_history":
-        tool_result = await get_file_history(pr_file, repo, current_user)
-      elif function_name == "check_security_patterns":
-        tool_result = check_security_patterns(pr_file)
-      elif function_name == "get_repo_memory":
-        tool_result = get_repo_memory(pr_file, repo, db)
-      else:
-        tool_result = f"'{function_name}' is not a valid tool. Please call one of: get_diff, get_file_history, check_security_patterns, get_repo_memory."
-      function_response_part = types.Part.from_function_response(
-        name=function_name,
-        response={"result": tool_result},
-        )
-      contents.append(types.Content(role="user", parts=[function_response_part]))
+    response_parts = []
+    for function_call in function_calls:
+      function_name = function_call.name
+      tool_result = await run_tool(function_name, pr_file, repo, db)
+      response_parts.append(types.Part.from_function_response(name=function_name, response={"result": tool_result}))
       file_log.append({"file" : file_path,
                        "iteration" : iterations,
                        "tool" : function_name,
                        "result_preview" : str(tool_result)[:200],
                        "retries" : retries})
-    else:
-      break
+    contents.append(types.Content(role="user", parts=response_parts))
 
   contents.append(
     types.Content(role="user", parts=[types.Part(

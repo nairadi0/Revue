@@ -27,6 +27,7 @@ class Repository(Base):
   name: Mapped[str]
   default_branch: Mapped[str]
   webhook_id: Mapped[int | None]
+  installation_id: Mapped[int | None]
 
 
 class UserRepository(Base):
@@ -124,4 +125,4 @@ class AgentRun(Base):
   started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
   completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   tool_calls_log: Mapped[list] = mapped_column(JSON, default=list)
-  triggered_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+  triggered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))

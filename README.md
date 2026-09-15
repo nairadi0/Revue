@@ -1,5 +1,7 @@
 # Revue
 
+[![CI](https://github.com/nairadi0/Revue/actions/workflows/ci.yml/badge.svg)](https://github.com/nairadi0/Revue/actions/workflows/ci.yml)
+
 **An autonomous GitHub pull request review agent with persistent memory.**
 
 Revue connects to your GitHub repositories and reviews pull requests using an LLM
@@ -123,25 +125,39 @@ A review starts one of two ways:
    an `agent_runs` row as `PENDING`, schedules the work as a FastAPI background task,
    and returns the run id immediately. The frontend polls `GET /agent_runs/{id}`
    every 3s (capped at ~100 attempts) until `SUCCESS` or `FAILED`.
-2. **Automatically**, by webhook. Connecting a repository registers a
-   `pull_request` webhook if the user has admin rights on it (silently skipped if
-   not). `POST /webhooks/github` verifies the signature and starts a run.
+2. **Automatically**, by webhook. Revue is a GitHub App, so every repository it is
+   installed on delivers `pull_request` events to one app-level webhook — nothing is
+   registered per repository. `POST /webhooks/github` verifies the HMAC signature,
+   mints an installation token for the repository, and starts a run. The PR author
+   does not need a Revue account; a collaborator's PR is reviewed the same way.
 
-Both paths share the same rate limit: five reviews per user per 24 hours, enforced
-by counting `agent_runs` rows.
+Manual runs are rate-limited per user, webhook runs per repository — five per 24
+hours in each case, enforced by counting `agent_runs` rows.
 
-### Auth
+### Auth and GitHub access
 
-GitHub OAuth, with two credentials kept deliberately separate:
+Revue is a **GitHub App**, and keeps three credentials deliberately separate:
 
 - A **session JWT** in an `httpOnly` cookie — who is logged into Revue.
-- The **GitHub access token**, stored server-side with its refresh token — what
-  Revue may do on the user's behalf.
+- A **user access token** (`ghu_`), from the App's OAuth flow, stored server-side
+  with its refresh token — used only to identify the user and list the repositories
+  they can see.
+- **Installation access tokens** (`ghs_`), minted on demand by signing an RS256 JWT
+  with the App's private key and exchanging it at
+  `POST /app/installations/{id}/access_tokens`. These act as `revue[bot]`, are
+  scoped to exactly the permissions the App declares — *Contents: read*, *Pull
+  requests: read*, *Metadata: read* — and are what every repository read actually
+  uses. They live an hour and are cached per installation.
 
-They have independent lifetimes. `get_valid_access_token` refreshes the GitHub token
-on demand when it has expired; the session JWT is unaffected. The OAuth redirect
-chain is a real browser navigation rather than `fetch`, because `Set-Cookie` on a
-cross-origin redirect has to happen outside JS.
+`repositories.installation_id` records which installation covers each repo, kept in
+sync by the App's `installation` and `installation_repositories` webhook events.
+Connecting a repository the App is not installed on returns `409 app_not_installed`
+with an install URL, which the UI turns into an *Install Revue on GitHub* button.
+
+The session JWT and the GitHub tokens have independent lifetimes.
+`get_valid_access_token` refreshes the user token on demand; the session is
+unaffected. The OAuth redirect chain is a real browser navigation rather than
+`fetch`, because `Set-Cookie` on a cross-origin redirect has to happen outside JS.
 
 ---
 
@@ -217,13 +233,37 @@ GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
 GITHUB_REDIRECT_URI=http://localhost:8000/auth/callback
 GITHUB_WEBHOOK_SECRET=...
+GITHUB_APP_ID=...
+GITHUB_APP_SLUG=...
+GITHUB_APP_PRIVATE_KEY=<base64 of the .pem>
 SESSION_SECRET=...
 GEMINI_API_KEY=...
 ```
 
-`GITHUB_CLIENT_ID` / `SECRET` come from a GitHub OAuth App whose callback URL
-matches `GITHUB_REDIRECT_URI`. `ENVIRONMENT` defaults to `development`, which sends
-the session cookie without `Secure` so it works over plain HTTP locally.
+The GitHub values come from a **GitHub App** (Settings → Developer settings →
+GitHub Apps) with repository permissions *Contents: read* and *Pull requests: read*,
+subscribed to the *Pull request* event, with *Expire user authorization tokens*
+enabled and a callback URL matching `GITHUB_REDIRECT_URI`. The private key is stored
+base64-encoded so the same value works in `.env` and in single-line environment
+stores like Elastic Beanstalk. For local webhook delivery, point the App's webhook
+at a [smee.io](https://smee.io) channel and run `npx smee-client --url <channel>
+--target http://localhost:8000/webhooks/github`.
+
+`ENVIRONMENT` defaults to `development`, which sends the session cookie without
+`Secure` so it works over plain HTTP locally.
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The suite runs against an in-memory SQLite database and mocks GitHub with `respx`,
+so it needs neither Docker nor network. It covers App JWT claims, installation-token
+caching, webhook signature rejection, the installation lifecycle events, the
+webhook-triggered review path, and the connect flow's installed / not-installed
+branches. CI runs it plus the frontend lint and build on every push.
 
 ---
 
@@ -289,6 +329,24 @@ radii) consumed through CSS Modules. Chart colors were validated rather than cho
 by eye — checked for colorblind separation and contrast against the actual dark
 surface they render on — and severity is never encoded by color alone, always
 color plus a text label.
+
+**Installation tokens, not user tokens, for repository reads.** The first version
+was a classic OAuth App with the `repo` scope, which grants write access to code,
+issues, wikis, and settings on every repository the user can touch — far more than
+a reviewer needs — and its webhook handler had to borrow a token from a Revue user
+matching the PR author, so a collaborator's PR was silently ignored. Moving to a
+GitHub App made the permission grant *Contents: read* + *Pull requests: read*, made
+webhooks app-level instead of per-repository, and let the agent act as `revue[bot]`
+regardless of who opened the PR. The user's OAuth token is now identity-only.
+
+**Answer every tool call in the turn.** Gemini will request several tools in a
+single response — in practice it asks for the diff, the history, the security scan,
+and the repo memory all at once. An early version of the loop read only the first
+part of the response, answered that one call, and left the model to re-request the
+others on the next iteration, burning the five-iteration budget on repeats. The loop
+now collects every `function_call` part, runs them all, and returns all the
+`function_response` parts in one user turn. A single-file review went from roughly a
+minute and a half to about five seconds.
 
 **One place for fetch behaviour.** Every authenticated request needs
 `credentials: 'include'` (for the cross-origin cookie) and a redirect to the login

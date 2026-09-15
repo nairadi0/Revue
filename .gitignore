@@ -10,3 +10,4 @@ revue-webhook-test/
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+.pytest_cache/

@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useRepo } from '../hooks/useRepo'
 import AppLayout from '../components/AppLayout'
-import { Badge, EmptyState, ErrorBanner, PageHeader, Skeleton } from '../components/ui'
+import { Badge, EmptyState, ErrorBanner, InstallPrompt, PageHeader, Skeleton } from '../components/ui'
 import { ChevronRight } from '../components/icons'
 import s from './PrList.module.css'
 
@@ -28,7 +28,8 @@ function PrList() {
   const { repoId } = useParams()
   const repo = useRepo(repoId)
   const [filter, setFilter] = useState<Filter>('ALL')
-  const { data: prs, error, loading } = useApiQuery<PR[]>(`/repos/${repoId}/prs`, 'Failed to load pull requests')
+  const { data: prs, error, failure, loading } = useApiQuery<PR[]>(`/repos/${repoId}/prs`, 'Failed to load pull requests')
+  const notInstalled = failure?.appNotInstalled ? failure : null
 
   const counts = useMemo(() => {
     const all = prs ?? []
@@ -50,8 +51,12 @@ function PrList() {
         subtitle="Open a pull request to trigger a review and read the agent's findings."
       />
 
-      {error && <ErrorBanner message={error} />}
+      {notInstalled?.installUrl && (
+        <InstallPrompt installUrl={notInstalled.installUrl} repoName={repo ? `${repo.owner}/${repo.name}` : undefined} />
+      )}
+      {error && !notInstalled && <ErrorBanner message={error} />}
 
+      {!notInstalled && (
       <div className={s.tabs}>
         {FILTERS.map((option) => (
           <button
@@ -64,6 +69,7 @@ function PrList() {
           </button>
         ))}
       </div>
+      )}
 
       {loading && (
         <div className={s.skeletons}>
@@ -73,7 +79,7 @@ function PrList() {
         </div>
       )}
 
-      {!loading && visible.length === 0 && (
+      {!loading && !notInstalled && visible.length === 0 && (
         <EmptyState
           title="No pull requests"
           text={

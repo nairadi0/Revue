@@ -1,6 +1,7 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { Link } from 'react-router'
 import { SEVERITY_BG, SEVERITY_COLOR } from '../lib/severity'
+import { GitHubIcon } from './icons'
 import s from './ui.module.css'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost'
@@ -14,6 +15,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({ variant = 'secondary', size = 'md', className, ...props }: ButtonProps) {
   const classes = [s.btn, s[variant], size !== 'md' ? s[size] : '', className ?? ''].filter(Boolean)
   return <button {...props} className={classes.join(' ')} />
+}
+
+interface LinkButtonProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
+  variant?: ButtonVariant
+  size?: ButtonSize
+}
+
+export function LinkButton({ variant = 'secondary', size = 'md', className, ...props }: LinkButtonProps) {
+  const classes = [s.btn, s[variant], size !== 'md' ? s[size] : '', className ?? ''].filter(Boolean)
+  return <a {...props} className={classes.join(' ')} />
 }
 
 export function Card({ children, className, padded = true }: { children: ReactNode; className?: string; padded?: boolean }) {
@@ -145,6 +156,22 @@ export function EmptyState({ icon, title, text, action }: { icon?: ReactNode; ti
       {text && <p className={s.emptyText}>{text}</p>}
       {action && <div className={s.emptyAction}>{action}</div>}
     </div>
+  )
+}
+
+export function InstallPrompt({ installUrl, repoName }: { installUrl: string; repoName?: string }) {
+  return (
+    <EmptyState
+      icon={<GitHubIcon size={28} />}
+      title={`Revue isn't installed on ${repoName ?? 'this repository'}`}
+      text="Revue reads pull requests through a GitHub App installation. Install it on the repository, then come back and try again."
+      action={
+        <LinkButton variant="primary" href={installUrl} target="_blank" rel="noreferrer">
+          <GitHubIcon size={14} />
+          Install Revue on GitHub
+        </LinkButton>
+      }
+    />
   )
 }
 

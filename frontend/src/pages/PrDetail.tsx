@@ -13,6 +13,7 @@ import {
   Chip,
   EmptyState,
   ErrorBanner,
+  InstallPrompt,
   PageHeader,
   SeverityBadge,
   Skeleton,
@@ -67,8 +68,10 @@ function PrDetail() {
   const {
     data: files,
     error: filesError,
+    failure: filesFailure,
     loading: filesLoading,
   } = useApiQuery<PRFile[]>(`/repos/${repoId}/prs/${prNumber}/files`, 'Failed to load files')
+  const notInstalled = filesFailure?.appNotInstalled ? filesFailure : null
   const { data: findings, refetch: refetchFindings } = useApiQuery<Finding[]>(
     `/repos/${repoId}/prs/${prNumber}/findings`,
     'Failed to load findings',
@@ -194,7 +197,11 @@ function PrDetail() {
       />
 
       {error && <ErrorBanner message={error} />}
-      {filesError && <ErrorBanner message={filesError} />}
+      {filesError && !notInstalled && <ErrorBanner message={filesError} />}
+
+      {notInstalled?.installUrl && (
+        <InstallPrompt installUrl={notInstalled.installUrl} repoName={repo ? `${repo.owner}/${repo.name}` : undefined} />
+      )}
 
       {isReviewInProgress && (
         <div className={s.runCard}>
@@ -213,6 +220,7 @@ function PrDetail() {
         <ErrorBanner message="The review run failed. Open the run history for the tool-call trace." />
       )}
 
+      {!notInstalled && (
       <div className={s.layout}>
         <section>
           {severityCounts.length > 0 && (
@@ -296,6 +304,7 @@ function PrDetail() {
           </div>
         </Card>
       </div>
+      )}
     </AppLayout>
   )
 }

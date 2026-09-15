@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { ApiError, apiPost } from '../api'
 import { useApiQuery } from '../hooks/useApiQuery'
 import Modal from '../components/Modal'
-import { Button, ErrorBanner, Input, Skeleton, Spinner } from '../components/ui'
-import { CheckIcon, SearchIcon } from '../components/icons'
+import { Button, ErrorBanner, Input, LinkButton, Skeleton, Spinner } from '../components/ui'
+import { CheckIcon, GitHubIcon, SearchIcon } from '../components/icons'
 import type { ConnectedRepo } from './Dashboard'
 import s from './ConnectRepoModal.module.css'
 
@@ -24,6 +24,7 @@ function ConnectRepoModal({ connectedRepos, onClose, onConnected }: ConnectRepoM
   const [search, setSearch] = useState('')
   const [connectingId, setConnectingId] = useState<number | null>(null)
   const [connectError, setConnectError] = useState<string | null>(null)
+  const [needsInstall, setNeedsInstall] = useState<{ repoId: number; url: string } | null>(null)
 
   const connectedKeys = useMemo(
     () => new Set(connectedRepos.map((repo) => `${repo.owner}/${repo.name}`)),
@@ -39,11 +40,16 @@ function ConnectRepoModal({ connectedRepos, onClose, onConnected }: ConnectRepoM
   const handleConnect = async (repo: GithubRepo) => {
     setConnectingId(repo.id)
     setConnectError(null)
+    setNeedsInstall(null)
     try {
       await apiPost('/repos/connect', { owner: repo.owner.login, name: repo.name }, `Failed to connect ${repo.name}`)
       onConnected()
     } catch (err) {
-      setConnectError(err instanceof ApiError ? err.message : `Failed to connect ${repo.name}`)
+      if (err instanceof ApiError && err.appNotInstalled && err.installUrl) {
+        setNeedsInstall({ repoId: repo.id, url: err.installUrl })
+      } else {
+        setConnectError(err instanceof ApiError ? err.message : `Failed to connect ${repo.name}`)
+      }
     } finally {
       setConnectingId(null)
     }
@@ -66,6 +72,15 @@ function ConnectRepoModal({ connectedRepos, onClose, onConnected }: ConnectRepoM
       </div>
 
       {(loadError || connectError) && <ErrorBanner message={loadError ?? connectError ?? ''} />}
+
+      {needsInstall && (
+        <div className={s.installHint}>
+          <GitHubIcon size={14} />
+          <span>
+            Revue isn’t installed on that repository yet. Install it on GitHub, then click <strong>Connect</strong> again.
+          </span>
+        </div>
+      )}
 
       {loading && (
         <div className={s.skeletons}>
@@ -94,6 +109,11 @@ function ConnectRepoModal({ connectedRepos, onClose, onConnected }: ConnectRepoM
                   <CheckIcon size={13} />
                   Connected
                 </span>
+              ) : needsInstall?.repoId === repo.id ? (
+                <LinkButton size="sm" variant="primary" href={needsInstall.url} target="_blank" rel="noreferrer">
+                  <GitHubIcon size={13} />
+                  Install
+                </LinkButton>
               ) : (
                 <Button size="sm" disabled={connecting} onClick={() => handleConnect(repo)}>
                   {connecting && <Spinner />}

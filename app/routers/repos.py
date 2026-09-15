@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..models import User, Repository, UserRepository
 from .auth import get_current_user, get_valid_access_token
+from ..services.github_app import find_repo_installation, AppNotInstalled
 from pydantic import BaseModel
 import httpx
 from ..database import get_db
 from sqlalchemy.orm import Session
-from ..config import settings
 
 
 router = APIRouter()
@@ -42,61 +42,50 @@ async def connect_repo(payload: ConnectRepoRequest, current_user: User = Depends
   owner = payload.owner
   name = payload.name
   await get_valid_access_token(current_user, db)
-  base_url = f"https://api.github.com/repos/{owner}/{name}"
   async with httpx.AsyncClient() as client:
     auth_header = {"Authorization" : f"Bearer {current_user.access_token}"}
-    response = await client.get(base_url, headers=auth_header)
-    if response.status_code != 200:
-      raise HTTPException(status_code=404, detail="Repository not found or not accessible")
-    repo_info = response.json()
-    repo = db.query(Repository).filter(Repository.github_repo_id == repo_info['id']).first()
+    response = await client.get(f"https://api.github.com/repos/{owner}/{name}", headers=auth_header)
+  if response.status_code != 200:
+    raise HTTPException(status_code=404, detail="Repository not found or not accessible")
+  repo_info = response.json()
 
-    if repo:
-      repo.default_branch = repo_info['default_branch']
-      repo.owner = repo_info['owner']['login']
-      repo.name = repo_info['name']
-    else: 
-      repo = Repository(
-        owner = repo_info['owner']['login'],
-        name = repo_info['name'],
-        default_branch = repo_info['default_branch'],
-        github_repo_id = repo_info['id'],
-      )
-      db.add(repo)
-      db.flush()
-    if repo.webhook_id is None:
-      response = await client.post(f"{base_url}/hooks",headers=auth_header, json={
-                                                   "name": "web",
-                                                   "active": True,
-                                                   "events": ["pull_request"],
-                                                   "config": {
-                                                              "url": f"{settings.backend_url}/webhooks/github",
-                                                              "content_type": "json",
-                                                              "secret": settings.github_webhook_secret,
-                                                              },
-                                                  }
-                        )
-      if response.status_code == 201: 
-        repo.webhook_id = response.json()["id"] 
-      else: 
-        print(response.status_code, response.text)
-      
-    user_repo = db.query(UserRepository).filter(UserRepository.repo_id == repo.id, UserRepository.user_id == current_user.id).first()
+  installation_id = await find_repo_installation(repo_info['owner']['login'], repo_info['name'])
+  if installation_id is None:
+    raise AppNotInstalled(repo_info['owner']['login'], repo_info['name'])
 
-    if not user_repo:
-      user_repo = UserRepository(
-        user_id = current_user.id, 
-        repo_id = repo.id,
-      )
-      db.add(user_repo)
-    db.commit()
-    return {
-      "id": repo.id,
-      "github_repo_id": repo.github_repo_id,
-      "owner": repo.owner,
-      "name": repo.name,
-      "default_branch": repo.default_branch,
-    }
+  repo = db.query(Repository).filter(Repository.github_repo_id == repo_info['id']).first()
+  if repo:
+    repo.default_branch = repo_info['default_branch']
+    repo.owner = repo_info['owner']['login']
+    repo.name = repo_info['name']
+    repo.installation_id = installation_id
+  else:
+    repo = Repository(
+      owner = repo_info['owner']['login'],
+      name = repo_info['name'],
+      default_branch = repo_info['default_branch'],
+      github_repo_id = repo_info['id'],
+      installation_id = installation_id,
+    )
+    db.add(repo)
+    db.flush()
+
+  user_repo = db.query(UserRepository).filter(UserRepository.repo_id == repo.id, UserRepository.user_id == current_user.id).first()
+  if not user_repo:
+    user_repo = UserRepository(
+      user_id = current_user.id,
+      repo_id = repo.id,
+    )
+    db.add(user_repo)
+  db.commit()
+  return {
+    "id": repo.id,
+    "github_repo_id": repo.github_repo_id,
+    "owner": repo.owner,
+    "name": repo.name,
+    "default_branch": repo.default_branch,
+    "installation_id": repo.installation_id,
+  }
 
 
 @router.get("/user/connected-repos")
