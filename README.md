@@ -36,6 +36,11 @@ sign in with GitHub to connect a repository.
 
 ## Screenshots
 
+![revue-agent[bot] review on a pull request](screenshots/agent-review.png)
+
+**On GitHub** — the agent posts its findings as a pull request review, with each
+finding anchored to the diff line it refers to.
+
 | | |
 |---|---|
 | ![Dashboard](screenshots/dashboard.png) | ![PR review findings](screenshots/pr-detail.png) |
