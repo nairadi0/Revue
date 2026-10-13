@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 import httpx
-from jose import jwt
+import jwt
 from ..config import settings
 
 
@@ -22,7 +22,7 @@ def make_app_jwt() -> str:
   claims = {
     "iat": now - CLOCK_SKEW_SECONDS,
     "exp": now + JWT_LIFETIME_SECONDS,
-    "iss": settings.github_app_id,
+    "iss": str(settings.github_app_id),
   }
   return jwt.encode(claims, settings.github_app_private_key_pem, algorithm="RS256")
 

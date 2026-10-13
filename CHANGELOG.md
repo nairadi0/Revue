@@ -15,6 +15,36 @@ the GitHub Release, and the Elastic Beanstalk version label share the same name.
 
 ## [Unreleased]
 
+### Added
+- **Security scanning in CI.** `security.yml` runs Semgrep (`p/default`, `p/python`,
+  `p/typescript`, `p/secrets`) over `app/` and `frontend/src/`, Bandit over `app/`,
+  pip-audit over `requirements.txt`, and `npm audit --audit-level=high` over the
+  frontend, on push, pull request, and weekly.
+- **DAST workflow.** `dast.yml` runs an OWASP ZAP baseline (passive) scan against the
+  deployed frontend on manual dispatch and weekly, uploading the report as an
+  artifact without failing the build.
+- Security response headers on every API response — HSTS, a `default-src 'none'`
+  CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and
+  `Permissions-Policy` — via `app/security_headers.py`.
+
+### Changed
+- **Replaced `python-jose` with `PyJWT` for all JWT signing and verification.**
+  `python-jose` is unmaintained and carries an unfixed algorithm-confusion advisory
+  (CVE-2026-85394); it also pulled in `ecdsa`, which has an unfixed timing-attack
+  advisory (PYSEC-2026-1325) that upstream considers out of scope. PyJWT signs via
+  `cryptography`, already a dependency, so `python-jose`, `ecdsa`, and `rsa` are all
+  dropped. Tokens remain standard JWTs, so existing sessions stay valid.
+- The GitHub App JWT now sends `iss` as a string, which PyJWT requires and the
+  GitHub API accepts.
+
+### Fixed
+- Upgraded `urllib3` 2.7.0 to 2.8.0, resolving three advisories (PYSEC-2026-4175,
+  PYSEC-2026-4176, PYSEC-2026-4177).
+- Updated `brace-expansion` and `source-map-js` transitive dev dependencies,
+  clearing two high-severity `npm audit` advisories.
+- Removed two unfixable dependency advisories by dropping `python-jose` and `ecdsa`;
+  `pip-audit` now reports no known vulnerabilities with no suppressions.
+
 ## [2.1.0] — 2026-09-15
 
 Findings are posted back to the pull request on GitHub as `revue[bot]` review comments.

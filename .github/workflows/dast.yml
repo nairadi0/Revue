@@ -1,0 +1,24 @@
+name: DAST
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    name: OWASP ZAP baseline (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: https://d1w4vdxnj7tj3o.cloudfront.net
+          cmd_options: -a
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-baseline-report

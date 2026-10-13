@@ -29,6 +29,7 @@ sign in with GitHub to connect a repository.
 - [Tech stack](#tech-stack)
 - [Running locally](#running-locally)
 - [Deployment](#deployment)
+- [Security scanning](#security-scanning)
 - [Engineering decisions](#engineering-decisions)
 - [Known limitations](#known-limitations)
 
@@ -223,7 +224,7 @@ onto the page.
 ## Tech stack
 
 **Backend** — Python, FastAPI, SQLAlchemy 2.0 (typed `Mapped` / `mapped_column`),
-Alembic, PostgreSQL, `google-genai` for the Gemini tool-use loop, `python-jose` for
+Alembic, PostgreSQL, `google-genai` for the Gemini tool-use loop, `PyJWT` for
 JWTs, `httpx` for async GitHub calls.
 
 **Frontend** — React 19, TypeScript, Vite, `react-router`. No CSS framework and no
@@ -297,6 +298,50 @@ so it needs neither Docker nor network. It covers App JWT claims, installation-t
 caching, webhook signature rejection, the installation lifecycle events, the
 webhook-triggered review path, and the connect flow's installed / not-installed
 branches. CI runs it plus the frontend lint and build on every push.
+
+---
+
+## Security scanning
+
+Two workflows run security tooling against the repository and the deployed app.
+
+**`.github/workflows/security.yml`** — static analysis and dependency auditing, on
+every push to `main`, every pull request, and weekly:
+
+| Job | Tool | Scope |
+|---|---|---|
+| `semgrep` | Semgrep `p/default`, `p/python`, `p/typescript`, `p/secrets` | `app/`, `frontend/src/` |
+| `bandit` | Bandit (`-ll`, medium severity and above) | `app/` |
+| `pip-audit` | pip-audit against `requirements.txt` | Python dependencies |
+| `npm-audit` | `npm audit --audit-level=high` | frontend dependencies |
+
+Every job runs clean with no suppressed findings and no baseline file.
+
+**`.github/workflows/dast.yml`** — an OWASP ZAP baseline scan (passive only) against
+the deployed frontend, on manual dispatch and weekly. It does not fail the build;
+the HTML and JSON reports are uploaded as the `zap-baseline-report` artifact on the
+workflow run.
+
+To run the static tooling locally:
+
+```bash
+pip install semgrep bandit pip-audit
+semgrep scan --config p/default --config p/python --config p/typescript --config p/secrets app frontend/src
+bandit -r app -ll
+pip-audit -r requirements.txt
+cd frontend && npm audit --audit-level=high
+```
+
+Results live on the Actions tab — each job's log for the SAST and dependency jobs,
+and the run artifact for ZAP.
+
+### Response headers
+
+The API sets `Strict-Transport-Security`, `Content-Security-Policy`
+(`default-src 'none'`), `X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, and `Permissions-Policy` on every response via a middleware in
+`app/security_headers.py`. The API serves JSON only, so the policy can deny
+everything rather than enumerate allowed sources.
 
 ---
 

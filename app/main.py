@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from .security_headers import SecurityHeadersMiddleware
 from .services.github_app import AppNotInstalled, install_url
 from .routers.auth import router as auth_router
 from .routers.repos import router as repos_router
@@ -33,3 +34,4 @@ app.add_middleware(
   allow_methods=["*"],
   allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)

@@ -4,7 +4,8 @@ from ..config import settings
 from datetime import datetime, timedelta, timezone
 from ..database import SessionLocal, get_db
 from ..models import User
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError
 from sqlalchemy.orm import Session
 
 
@@ -92,7 +93,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
   try:
     decoded_token = jwt.decode(token, settings.session_secret, algorithms=["HS256"])
     user_id = int(decoded_token["sub"])
-  except JWTError:
+  except PyJWTError:
     raise HTTPException(status_code=401, detail="Invalid Token")
   user = db.query(User).filter(User.id == user_id).first()
   if not user: raise HTTPException(status_code=401, detail="User not found")
