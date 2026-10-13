@@ -26,6 +26,8 @@ the GitHub Release, and the Elastic Beanstalk version label share the same name.
 - Security response headers on every API response — HSTS, a `default-src 'none'`
   CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and
   `Permissions-Policy` — via `app/security_headers.py`.
+- `form-action 'none'` in the API's content security policy, closing the one medium
+  alert the first ZAP baseline run raised that applied to the API's policy shape.
 
 ### Changed
 - **Replaced `python-jose` with `PyJWT` for all JWT signing and verification.**

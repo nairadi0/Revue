@@ -322,6 +322,14 @@ the deployed frontend, on manual dispatch and weekly. It does not fail the build
 the HTML and JSON reports are uploaded as the `zap-baseline-report` artifact on the
 workflow run.
 
+The first run reported no high-risk alerts. One medium alert is accepted rather than
+fixed: the frontend's CSP allows `style-src 'unsafe-inline'`, because the charts and
+severity bars compute colors and widths from data and set them through React's
+`style` prop. Removing it would need either a nonce — impossible on a static S3 origin
+— or a fixed set of pre-generated classes, which cannot express computed bar widths.
+`script-src` remains `'self'` with no inline allowance, which is where the real
+cross-site-scripting risk lives.
+
 To run the static tooling locally:
 
 ```bash
