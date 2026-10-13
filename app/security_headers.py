@@ -6,7 +6,7 @@ SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+  "Content-Security-Policy": "default-src 'none'; form-action 'none'; frame-ancestors 'none'",
   "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
 }
 
