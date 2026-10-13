@@ -3,7 +3,7 @@ import pytest
 import respx
 from cryptography.hazmat.primitives import serialization
 from httpx import Response
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.services import github_app
@@ -17,7 +17,7 @@ def test_app_jwt_has_expected_claims(rsa_key):
   )
   claims = jwt.decode(token, public_pem, algorithms=["RS256"])
   now = int(time.time())
-  assert claims["iss"] == settings.github_app_id
+  assert claims["iss"] == str(settings.github_app_id)
   assert claims["iat"] <= now - 30
   assert 0 < claims["exp"] - now <= 600
 
